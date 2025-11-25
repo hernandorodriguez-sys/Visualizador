@@ -3,7 +3,7 @@ matplotlib.use('QtAgg')  # Use PyQt6 backend
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from .config import WINDOW_SIZE, Y_MIN, Y_MAX
+from .config import SAMPLE_RATE
 from .utils import get_current_lead
 
 def on_lead_di_button(event, data_manager, serial_reader_esp32):
@@ -50,7 +50,7 @@ def on_discharge_button(event, data_manager):
         data_manager.force_discharge = True
     print("Comando de DESCARGA MANUAL activado")
 
-def setup_plot():
+def setup_plot(data_manager):
     """Configura la interfaz gráfica para ADC raw"""
     plt.style.use('default')
 
@@ -59,10 +59,11 @@ def setup_plot():
 
     ax = fig.add_subplot(111)
     ax.set_facecolor('#FFE4E1')
-    ax.set_xlim(0, WINDOW_SIZE)
-    ax.set_ylim(Y_MIN, Y_MAX)
+    ax.set_xlim(0, data_manager.plot_window_size)
+    ax.set_ylim(data_manager.plot_y_min, data_manager.plot_y_max)
     ax.set_ylabel('Voltaje (V)', color='black', fontweight='bold')
-    ax.set_xlabel('Muestras', color='black', fontweight='bold')
+    xlabel = 'Tiempo (s)' if data_manager.plot_time_axis else 'Muestras'
+    ax.set_xlabel(xlabel, color='black', fontweight='bold')
     ax.set_title('Monitor ECG - Señal ADC Raw (ESP32)', color='black', fontweight='bold', fontsize=12, pad=15)
     ax.grid(True, color='gray', linestyle='-', linewidth=0.5, alpha=0.7)
     ax.minorticks_on()
@@ -85,23 +86,35 @@ def update_plot(data_manager, line_raw, status_text, ax):
 
         y_raw = list(data_manager.voltage_buffer)
         x_data = list(data_manager.time_buffer)
+        window_size = data_manager.plot_window_size
+        time_axis = data_manager.plot_time_axis
+        y_min = data_manager.plot_y_min
+        y_max = data_manager.plot_y_max
 
     # Ventana visible
-    if len(y_raw) > WINDOW_SIZE:
-        start_idx = len(y_raw) - WINDOW_SIZE
+    if len(y_raw) > window_size:
+        start_idx = len(y_raw) - window_size
         y_raw_visible = y_raw[start_idx:]
         x_visible = x_data[start_idx:]
     else:
         y_raw_visible = y_raw
         x_visible = x_data
 
+    # Convert to time axis if enabled
+    if time_axis:
+        x_visible = [x / SAMPLE_RATE for x in x_visible]
+
     line_raw.set_data(x_visible, y_raw_visible)
 
-    # Ajustar límites X
+    # Update axis limits
+    ax.set_ylim(y_min, y_max)
     if len(x_visible) > 0:
         x_min = x_visible[0]
-        x_max = x_visible[-1] if len(x_visible) > WINDOW_SIZE else x_visible[0] + WINDOW_SIZE
+        x_max = x_visible[-1] if len(x_visible) > window_size else x_visible[0] + (window_size / SAMPLE_RATE if time_axis else window_size)
         ax.set_xlim(x_min, x_max)
+
+    # Update labels
+    ax.set_xlabel('Tiempo (s)' if time_axis else 'Muestras')
 
     with data_manager.data_lock:
         # Indicadores de conexión

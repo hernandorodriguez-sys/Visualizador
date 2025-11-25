@@ -45,5 +45,11 @@ class DataManager:
         # Filter
         self.baseline_filter = BaselineEMA(alpha=0.995)
 
+        # Plot settings
+        self.plot_y_min = -0.5
+        self.plot_y_max = 4.0  # Limited to 4V as requested
+        self.plot_window_size = 1500
+        self.plot_time_axis = False  # False = samples, True = time
+
     def write_csv_row(self, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
         self.data_recorder.write_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)

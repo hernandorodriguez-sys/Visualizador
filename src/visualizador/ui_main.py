@@ -1,6 +1,6 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox
-from PyQt6.QtCore import QTimer, pyqtSlot
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox
+from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .data_manager import DataManager
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
@@ -271,7 +271,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         # Matplotlib canvas
-        self.canvas, self.ax, self.line_raw, self.status_text = setup_plot()
+        self.canvas, self.ax, self.line_raw, self.status_text = setup_plot(self.data_manager)
         layout.addWidget(self.canvas)
 
         # Status panels
@@ -288,6 +288,8 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.lead_control)
         self.data_recorder_control = DataRecorderControlWidget(self.data_manager)
         status_layout.addWidget(self.data_recorder_control)
+        self.plot_control = PlotControlWidget(self.data_manager)
+        status_layout.addWidget(self.plot_control)
         layout.addLayout(status_layout)
 
         # Timer for updates
@@ -325,6 +327,75 @@ class MainWindow(QMainWindow):
 
         # Update data recorder status
         self.data_recorder_control.update_status()
+
+
+class PlotControlWidget(QGroupBox):
+    def __init__(self, data_manager):
+        super().__init__("Plot Controls")
+        self.data_manager = data_manager
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QGridLayout()
+
+        # Y-axis amplitude controls
+        layout.addWidget(QLabel("Y Min:"), 0, 0)
+        self.y_min_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_min_slider.setRange(-20, 40)
+        self.y_min_slider.setValue(int(self.data_manager.plot_y_min * 10))
+        self.y_min_slider.valueChanged.connect(self.on_y_min_changed)
+        layout.addWidget(self.y_min_slider, 0, 1)
+
+        self.y_min_label = QLabel(f"{self.data_manager.plot_y_min:.1f}")
+        layout.addWidget(self.y_min_label, 0, 2)
+
+        layout.addWidget(QLabel("Y Max:"), 1, 0)
+        self.y_max_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_max_slider.setRange(-20, 40)
+        self.y_max_slider.setValue(int(min(self.data_manager.plot_y_max * 10, 40)))  # Cap at 4.0V
+        self.y_max_slider.valueChanged.connect(self.on_y_max_changed)
+        layout.addWidget(self.y_max_slider, 1, 1)
+
+        self.y_max_label = QLabel(f"{self.data_manager.plot_y_max:.1f}")
+        layout.addWidget(self.y_max_label, 1, 2)
+
+        # Window size control
+        layout.addWidget(QLabel("Window Size:"), 2, 0)
+        self.window_size_spin = QSpinBox()
+        self.window_size_spin.setRange(500, 5000)
+        self.window_size_spin.setValue(self.data_manager.plot_window_size)
+        self.window_size_spin.setSingleStep(100)
+        self.window_size_spin.valueChanged.connect(self.on_window_size_changed)
+        layout.addWidget(self.window_size_spin, 2, 1)
+
+        # Time axis toggle
+        layout.addWidget(QLabel("Time Axis:"), 3, 0)
+        self.time_axis_check = QCheckBox("Use Time (s)")
+        self.time_axis_check.setChecked(self.data_manager.plot_time_axis)
+        self.time_axis_check.stateChanged.connect(self.on_time_axis_changed)
+        layout.addWidget(self.time_axis_check, 3, 1)
+
+        self.setLayout(layout)
+
+    def on_y_min_changed(self, value):
+        y_min = value / 10.0
+        with self.data_manager.data_lock:
+            self.data_manager.plot_y_min = y_min
+        self.y_min_label.setText(f"{y_min:.1f}")
+
+    def on_y_max_changed(self, value):
+        y_max = value / 10.0
+        with self.data_manager.data_lock:
+            self.data_manager.plot_y_max = y_max
+        self.y_max_label.setText(f"{y_max:.1f}")
+
+    def on_window_size_changed(self, value):
+        with self.data_manager.data_lock:
+            self.data_manager.plot_window_size = value
+
+    def on_time_axis_changed(self, state):
+        with self.data_manager.data_lock:
+            self.data_manager.plot_time_axis = (state == Qt.CheckState.Checked)
 
     def closeEvent(self, event):
         self.timer.stop()
