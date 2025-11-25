@@ -1,8 +1,8 @@
 import threading
 from collections import deque
-from filters import BaselineEMA
-from utils import write_csv_row
-from config import buffer_size
+from .filters import BaselineEMA
+from .utils import write_csv_row
+from .config import buffer_size
 
 class DataManager:
     def __init__(self):
