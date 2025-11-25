@@ -132,10 +132,15 @@ class SerialReaderESP32:
                             voltage = self.decode_packet(packet)
 
                             if voltage is not None:
-                                filtered_voltage, baseline = data_manager.baseline_filter.process_sample(voltage)
+                                # Apply gain to raw voltage
+                                with data_manager.data_lock:
+                                    gain = data_manager.signal_gain
+                                voltage_with_gain = voltage * gain
+
+                                filtered_voltage, baseline = data_manager.baseline_filter.process_sample(voltage_with_gain)
 
                                 with data_manager.data_lock:
-                                    data_manager.voltage_buffer.append(voltage)
+                                    data_manager.voltage_buffer.append(voltage_with_gain)
                                     data_manager.filtered_buffer.append(filtered_voltage)
                                     data_manager.baseline_buffer.append(baseline)
                                     data_manager.time_buffer.append(data_manager.sample_count)

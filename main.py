@@ -8,6 +8,7 @@ from visualizador.data_manager import DataManager
 from visualizador.serial_readers import SerialReaderESP32, SerialReaderArduino
 from visualizador.ui_main import MainWindow
 from visualizador.data_recorder import DataRecorder
+from visualizador.filter_service import RealTimeFilterService
 
 def main():
     print("=" * 70)
@@ -31,6 +32,10 @@ def main():
     # Initialize data manager
     data_manager = DataManager()
     data_manager.data_recorder.start_recording()
+
+    # Initialize real-time filter service
+    filter_service = RealTimeFilterService(data_manager)
+    filter_service.start()
 
     # Initialize serial readers
     serial_reader_esp32 = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE)
@@ -83,6 +88,7 @@ def main():
         print("\nCerrando conexiones seriales...")
         serial_reader_esp32.stop()
         serial_reader_arduino.stop()
+        filter_service.stop()
         data_manager.data_recorder.close()
         print("Aplicacion cerrada correctamente")
 

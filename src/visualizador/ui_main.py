@@ -368,12 +368,23 @@ class PlotControlWidget(QGroupBox):
         self.window_size_spin.valueChanged.connect(self.on_window_size_changed)
         layout.addWidget(self.window_size_spin, 2, 1)
 
+        # Signal gain control
+        layout.addWidget(QLabel("Signal Gain:"), 4, 0)
+        self.gain_slider = QSlider(Qt.Orientation.Horizontal)
+        self.gain_slider.setRange(1, 100)  # 0.1x to 10x gain
+        self.gain_slider.setValue(int(self.data_manager.signal_gain * 10))
+        self.gain_slider.valueChanged.connect(self.on_gain_changed)
+        layout.addWidget(self.gain_slider, 4, 1)
+
+        self.gain_label = QLabel(f"{self.data_manager.signal_gain:.1f}x")
+        layout.addWidget(self.gain_label, 4, 2)
+
         # Time axis toggle
-        layout.addWidget(QLabel("Time Axis:"), 3, 0)
+        layout.addWidget(QLabel("Time Axis:"), 5, 0)
         self.time_axis_check = QCheckBox("Use Time (s)")
         self.time_axis_check.setChecked(self.data_manager.plot_time_axis)
         self.time_axis_check.stateChanged.connect(self.on_time_axis_changed)
-        layout.addWidget(self.time_axis_check, 3, 1)
+        layout.addWidget(self.time_axis_check, 5, 1)
 
         self.setLayout(layout)
 
@@ -392,6 +403,12 @@ class PlotControlWidget(QGroupBox):
     def on_window_size_changed(self, value):
         with self.data_manager.data_lock:
             self.data_manager.plot_window_size = value
+
+    def on_gain_changed(self, value):
+        gain = value / 10.0
+        with self.data_manager.data_lock:
+            self.data_manager.signal_gain = gain
+        self.gain_label.setText(f"{gain:.1f}x")
 
     def on_time_axis_changed(self, state):
         with self.data_manager.data_lock:

@@ -10,6 +10,7 @@ class DataManager:
         self.data_lock = threading.Lock()
         self.voltage_buffer = deque(maxlen=buffer_size)
         self.filtered_buffer = deque(maxlen=buffer_size)
+        self.antialiased_buffer = deque(maxlen=buffer_size)
         self.baseline_buffer = deque(maxlen=buffer_size)
         self.time_buffer = deque(maxlen=buffer_size)
         self.sample_count = 0
@@ -50,6 +51,7 @@ class DataManager:
         self.plot_y_max = 4.0  # Limited to 4V as requested
         self.plot_window_size = 1500
         self.plot_time_axis = False  # False = samples, True = time
+        self.signal_gain = 1.0  # Signal gain multiplier
 
     def write_csv_row(self, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
         self.data_recorder.write_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
