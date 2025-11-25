@@ -64,11 +64,13 @@ def main():
         def print_stats():
             while serial_reader_esp32.running:
                 time.sleep(10)
-                if serial_reader_esp32.valid_packets > 0:
-                    error_rate = (serial_reader_esp32.invalid_packets /
-                                  (serial_reader_esp32.valid_packets + serial_reader_esp32.invalid_packets)) * 100
-                    print(f"ESP32: {serial_reader_esp32.valid_packets} paquetes validos, "
-                          f"{serial_reader_esp32.invalid_packets} invalidos ({error_rate:.2f}% error)")
+                with data_manager.data_lock:  # Though counters are in serial_reader, to be safe
+                    valid = serial_reader_esp32.valid_packets
+                    invalid = serial_reader_esp32.invalid_packets
+                if valid > 0:
+                    error_rate = (invalid / (valid + invalid)) * 100
+                    print(f"ESP32: {valid} paquetes validos, "
+                          f"{invalid} invalidos ({error_rate:.2f}% error)")
 
         stats_thread = threading.Thread(target=print_stats, daemon=True)
         stats_thread.start()
