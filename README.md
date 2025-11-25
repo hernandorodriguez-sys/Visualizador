@@ -10,7 +10,8 @@ A real-time ECG monitoring system that reads data from ESP32 and Arduino devices
 - **Manual Lead Control**: Switch between ECG leads (DI, DII, DIII, aVR)
 - **Energy Monitoring**: Track capacitor discharge energy from Arduino
 - **Data Logging**: Automatic CSV export of all measurements
-- **Info Panel**: Real-time status and energy information display
+- **Device Status Widget**: Shows ESP32 and Arduino connection status
+- **Cardioversor Status Widget**: Displays current lead, energies, and discharge information
 
 ## Installation
 
@@ -65,7 +66,8 @@ Edit `src/visualizador/config.py` to adjust:
 - **Lead Buttons**: Click DI/DII/DIII/aVR to switch ECG leads
 - **Manual Control**: Use buttons for capacitor charge/discharge (via Arduino)
 - **Visualization**: Real-time ADC raw signal plot in PyQt window
-- **Info Panel**: Bottom panel shows connection status, energies, and discharge info
+- **Device Status Widget**: Shows real-time ESP32 and Arduino connection status
+- **Cardioversor Status Widget**: Displays current ECG lead, energy levels, and discharge statistics
 
 ## Project Structure
 
