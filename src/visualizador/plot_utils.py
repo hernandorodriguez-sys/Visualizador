@@ -6,36 +6,32 @@ from matplotlib.figure import Figure
 from .config import SAMPLE_RATE
 from .utils import get_current_lead
 
-def on_lead_di_button(event, data_manager, serial_reader_esp32):
+def on_lead_di_button(event, ui_service, serial_reader_esp32):
     """Cambiar a derivación DI"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DI")
-        with data_manager.data_lock:
-            data_manager.current_lead_index = 0
+        ui_service.current_lead_index = 0
         print("Cambio a derivacion DI")
 
-def on_lead_dii_button(event, data_manager, serial_reader_esp32):
+def on_lead_dii_button(event, ui_service, serial_reader_esp32):
     """Cambiar a derivación DII"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DII")
-        with data_manager.data_lock:
-            data_manager.current_lead_index = 1
+        ui_service.current_lead_index = 1
         print("Cambio a derivacion DII")
 
-def on_lead_diii_button(event, data_manager, serial_reader_esp32):
+def on_lead_diii_button(event, ui_service, serial_reader_esp32):
     """Cambiar a derivación DIII"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DIII")
-        with data_manager.data_lock:
-            data_manager.current_lead_index = 2
+        ui_service.current_lead_index = 2
         print("Cambio a derivacion DIII")
 
-def on_lead_avr_button(event, data_manager, serial_reader_esp32):
+def on_lead_avr_button(event, ui_service, serial_reader_esp32):
     """Cambiar a derivación aVR"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("AVR")
-        with data_manager.data_lock:
-            data_manager.current_lead_index = 3
+        ui_service.current_lead_index = 3
         print("Cambio a derivacion aVR")
 
 def on_charge_button(event, data_manager):
@@ -50,7 +46,7 @@ def on_discharge_button(event, data_manager):
         data_manager.force_discharge = True
     print("Comando de DESCARGA MANUAL activado")
 
-def setup_plot(data_manager):
+def setup_plot(ui_service):
     """Configura la interfaz gráfica para ADC raw"""
     plt.style.use('default')
 
@@ -59,10 +55,10 @@ def setup_plot(data_manager):
 
     ax = fig.add_subplot(111)
     ax.set_facecolor('#FFE4E1')
-    ax.set_xlim(0, data_manager.plot_window_size)
-    ax.set_ylim(data_manager.plot_y_min, data_manager.plot_y_max)
+    ax.set_xlim(0, ui_service.plot_window_size)
+    ax.set_ylim(ui_service.plot_y_min, ui_service.plot_y_max)
     ax.set_ylabel('Voltaje (V)', color='black', fontweight='bold')
-    xlabel = 'Tiempo (s)' if data_manager.plot_time_axis else 'Muestras'
+    xlabel = 'Tiempo (s)' if ui_service.plot_time_axis else 'Muestras'
     ax.set_xlabel(xlabel, color='black', fontweight='bold')
     ax.set_title('Monitor ECG - Señal ADC Raw (ESP32)', color='black', fontweight='bold', fontsize=12, pad=15)
     ax.grid(True, color='gray', linestyle='-', linewidth=0.5, alpha=0.7)
@@ -72,24 +68,23 @@ def setup_plot(data_manager):
     ax.legend(loc='upper right', fontsize=8)
 
     status_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
-                          verticalalignment='top', fontsize=7, color='black',
-                          bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.9, edgecolor='gray'))
+                           verticalalignment='top', fontsize=7, color='black',
+                           bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.9, edgecolor='gray'))
 
     canvas = FigureCanvas(fig)
     return canvas, ax, line_raw, status_text
 
-def update_plot(data_manager, line_raw, status_text, ax):
+def update_plot(ui_service, line_raw, status_text, ax):
     """Actualiza la visualización del ADC raw"""
-    with data_manager.data_lock:
-        if len(data_manager.voltage_buffer) == 0:
-            return
+    if len(ui_service.voltage_buffer) == 0:
+        return
 
-        y_raw = list(data_manager.voltage_buffer)
-        x_data = list(data_manager.time_buffer)
-        window_size = data_manager.plot_window_size
-        time_axis = data_manager.plot_time_axis
-        y_min = data_manager.plot_y_min
-        y_max = data_manager.plot_y_max
+    y_raw = list(ui_service.voltage_buffer)
+    x_data = list(ui_service.time_buffer)
+    window_size = ui_service.plot_window_size
+    time_axis = ui_service.plot_time_axis
+    y_min = ui_service.plot_y_min
+    y_max = ui_service.plot_y_max
 
     # Ventana visible
     if len(y_raw) > window_size:
@@ -116,11 +111,10 @@ def update_plot(data_manager, line_raw, status_text, ax):
     # Update labels
     ax.set_xlabel('Tiempo (s)' if time_axis else 'Muestras')
 
-    with data_manager.data_lock:
-        # Indicadores de conexión
-        esp32_status = "ESP32 OK" if data_manager.esp32_connected else "ESP32 ERR"
-        arduino_status = "ARD OK" if data_manager.arduino_connected else "ARD ERR"
+    # Indicadores de conexión
+    esp32_status = "ESP32 OK" if ui_service.esp32_connected else "ESP32 ERR"
+    arduino_status = "ARD OK" if ui_service.arduino_connected else "ARD ERR"
 
-        status_text.set_text(
-            f"{esp32_status} | {arduino_status} | Muestras: {len(y_raw)}"
-        )
+    status_text.set_text(
+        f"{esp32_status} | {arduino_status} | Muestras: {len(y_raw)}"
+    )
