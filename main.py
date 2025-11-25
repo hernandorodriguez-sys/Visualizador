@@ -1,12 +1,12 @@
 import time
 import threading
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
+import sys
+from PyQt6.QtWidgets import QApplication
 
-from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE, refresh_interval
+from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
 from visualizador.data_manager import DataManager
 from visualizador.serial_readers import SerialReaderESP32, SerialReaderArduino
-from visualizador.plot_utils import setup_plot, update_plot
+from visualizador.ui_main import MainWindow
 from visualizador.utils import init_csv
 
 def main():
@@ -24,11 +24,7 @@ def main():
     print("  Boton aVR  - Derivacion aVR")
     print("-" * 70)
     print("VISUALIZACION:")
-    print("  • Senal ECG cruda (directo del ADC)")
-    print("  • Senal ECG con baseline EMA")
-    print("  • Deteccion automatica de picos R")
-    print("  • Grafica de descarga bifasica del capacitor")
-    print("  • Energias en tiempo real")
+    print("  • Senal ECG ADC Raw")
     print("=" * 70)
     print()
 
@@ -39,15 +35,6 @@ def main():
     # Initialize serial readers
     serial_reader_esp32 = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE)
     serial_reader_arduino = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE)
-
-    # Setup plot
-    setup_result = setup_plot(data_manager, serial_reader_esp32)
-    (fig, ax1, ax2, ax3, ax_info, line_raw, line_filtered, line_baseline,
-     peaks_line, post_r_line, discharge_line, line_descarga,
-     status_text, info_text, btn_di, btn_dii, btn_diii, btn_avr) = setup_result
-
-    # Update plot setup with serial reader
-    # Note: We need to recreate buttons with proper callbacks, but for simplicity, we'll handle it in the update function
 
     try:
         print("🚀 Iniciando lecturas seriales...\n")
@@ -64,7 +51,7 @@ def main():
         def print_stats():
             while serial_reader_esp32.running:
                 time.sleep(10)
-                with data_manager.data_lock:  # Though counters are in serial_reader, to be safe
+                with data_manager.data_lock:
                     valid = serial_reader_esp32.valid_packets
                     invalid = serial_reader_esp32.invalid_packets
                 if valid > 0:
@@ -75,25 +62,16 @@ def main():
         stats_thread = threading.Thread(target=print_stats, daemon=True)
         stats_thread.start()
 
-        ani = animation.FuncAnimation(fig, lambda frame: update_plot(frame, data_manager, line_raw, line_filtered, line_baseline, peaks_line, post_r_line, discharge_line, line_descarga, status_text, info_text, ax1, ax2, ax3),
-                                      interval=refresh_interval, blit=False, cache_frame_data=False)
+        # PyQt Application
+        app = QApplication(sys.argv)
+        window = MainWindow(data_manager, serial_reader_esp32, serial_reader_arduino)
+        window.show()
 
         print("Abriendo ventana de visualizacion...\n")
         print("INSTRUCCIONES:")
-        print("   • Usar botones para cambiar derivaciones manualmente")
-        print("   • Grafica inferior muestra descarga bifasica\n")
+        print("   • Usar botones para cambiar derivaciones manualmente\n")
 
-        def on_close(event):
-            print("\nCerrando aplicacion...")
-            serial_reader_esp32.stop()
-            serial_reader_arduino.stop()
-            if data_manager.csv_file:
-                data_manager.csv_file.close()
-                print(f"Archivo CSV guardado: {data_manager.csv_filename}")
-            plt.close('all')
-
-        fig.canvas.mpl_connect('close_event', on_close)
-        plt.show()
+        sys.exit(app.exec())
 
     except KeyboardInterrupt:
         print("\nInterrupcion por teclado - Cerrando...")
