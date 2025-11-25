@@ -127,6 +127,86 @@ class CardioversorControlWidget(QGroupBox):
         self.serial_reader_arduino.send_command("DISARM")
 
 
+class CardioversorFireControlWidget(QGroupBox):
+    def __init__(self, serial_reader_arduino):
+        super().__init__("Fire Control")
+        self.serial_reader_arduino = serial_reader_arduino
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.auto_button = QPushButton("Auto")
+        self.auto_button.clicked.connect(self.on_auto_clicked)
+        layout.addWidget(self.auto_button)
+
+        self.manual_button = QPushButton("Manual")
+        self.manual_button.clicked.connect(self.on_manual_clicked)
+        layout.addWidget(self.manual_button)
+
+        self.test_fire_button = QPushButton("Test Fire")
+        self.test_fire_button.setStyleSheet("background-color: orange; color: white; font-weight: bold;")
+        self.test_fire_button.clicked.connect(self.on_test_fire_clicked)
+        layout.addWidget(self.test_fire_button)
+
+        self.setLayout(layout)
+
+    def on_auto_clicked(self):
+        self.serial_reader_arduino.send_command("AUTO")
+
+    def on_manual_clicked(self):
+        self.serial_reader_arduino.send_command("MANUAL")
+
+    def on_test_fire_clicked(self):
+        reply = QMessageBox.question(
+            self, 'Confirmar Test Fire',
+            "¿Está seguro de que desea realizar Test Fire?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.serial_reader_arduino.send_command("TEST_FIRE")
+
+
+class LeadControlWidget(QGroupBox):
+    def __init__(self, data_manager, serial_reader_esp32):
+        super().__init__("Control Derivada")
+        self.data_manager = data_manager
+        self.serial_reader_esp32 = serial_reader_esp32
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.btn_di = QPushButton('DI')
+        self.btn_di.clicked.connect(lambda: self.on_lead_button('DI'))
+        layout.addWidget(self.btn_di)
+
+        self.btn_dii = QPushButton('DII')
+        self.btn_dii.clicked.connect(lambda: self.on_lead_button('DII'))
+        layout.addWidget(self.btn_dii)
+
+        self.btn_diii = QPushButton('DIII')
+        self.btn_diii.clicked.connect(lambda: self.on_lead_button('DIII'))
+        layout.addWidget(self.btn_diii)
+
+        self.btn_avr = QPushButton('aVR')
+        self.btn_avr.clicked.connect(lambda: self.on_lead_button('aVR'))
+        layout.addWidget(self.btn_avr)
+
+        self.setLayout(layout)
+
+    def on_lead_button(self, lead):
+        if lead == 'DI':
+            on_lead_di_button(None, self.data_manager, self.serial_reader_esp32)
+        elif lead == 'DII':
+            on_lead_dii_button(None, self.data_manager, self.serial_reader_esp32)
+        elif lead == 'DIII':
+            on_lead_diii_button(None, self.data_manager, self.serial_reader_esp32)
+        elif lead == 'aVR':
+            on_lead_avr_button(None, self.data_manager, self.serial_reader_esp32)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, serial_reader_esp32, serial_reader_arduino):
         super().__init__()
@@ -148,26 +228,6 @@ class MainWindow(QMainWindow):
         self.canvas, self.ax, self.line_raw, self.status_text = setup_plot()
         layout.addWidget(self.canvas)
 
-        # Buttons layout
-        buttons_layout = QHBoxLayout()
-        self.btn_di = QPushButton('DI')
-        self.btn_di.clicked.connect(lambda: self.on_lead_button('DI'))
-        buttons_layout.addWidget(self.btn_di)
-
-        self.btn_dii = QPushButton('DII')
-        self.btn_dii.clicked.connect(lambda: self.on_lead_button('DII'))
-        buttons_layout.addWidget(self.btn_dii)
-
-        self.btn_diii = QPushButton('DIII')
-        self.btn_diii.clicked.connect(lambda: self.on_lead_button('DIII'))
-        buttons_layout.addWidget(self.btn_diii)
-
-        self.btn_avr = QPushButton('aVR')
-        self.btn_avr.clicked.connect(lambda: self.on_lead_button('aVR'))
-        buttons_layout.addWidget(self.btn_avr)
-
-        layout.addLayout(buttons_layout)
-
         # Status panels
         status_layout = QHBoxLayout()
         self.device_status = DeviceStatusWidget()
@@ -176,6 +236,10 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.cardioversor_status)
         self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino)
         status_layout.addWidget(self.cardioversor_control)
+        self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino)
+        status_layout.addWidget(self.fire_control)
+        self.lead_control = LeadControlWidget(self.data_manager, self.serial_reader_esp32)
+        status_layout.addWidget(self.lead_control)
         layout.addLayout(status_layout)
 
         # Timer for updates
@@ -210,16 +274,6 @@ class MainWindow(QMainWindow):
                 last_discharge_time=last_discharge_time,
                 total_discharges=len(self.data_manager.discharge_events)
             )
-
-    def on_lead_button(self, lead):
-        if lead == 'DI':
-            on_lead_di_button(None, self.data_manager, self.serial_reader_esp32)
-        elif lead == 'DII':
-            on_lead_dii_button(None, self.data_manager, self.serial_reader_esp32)
-        elif lead == 'DIII':
-            on_lead_diii_button(None, self.data_manager, self.serial_reader_esp32)
-        elif lead == 'aVR':
-            on_lead_avr_button(None, self.data_manager, self.serial_reader_esp32)
 
     def closeEvent(self, event):
         self.timer.stop()
