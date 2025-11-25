@@ -95,11 +95,13 @@ class SerialReaderESP32:
                             if len(parts) >= 2:
                                 lead_idx = int(parts[0].strip())
                                 lead_name = parts[1].strip()
-                                data_manager.current_lead_index = lead_idx
+                                with data_manager.data_lock:
+                                    data_manager.current_lead_index = lead_idx
                                 print(f"[ESP32] Cambio de derivacion: {lead_name}")
 
                         if "R_PEAK:" in text:
-                            data_manager.last_r_peak_time = int(time.time() * 1000)
+                            with data_manager.data_lock:
+                                data_manager.last_r_peak_time = int(time.time() * 1000)
                             if DEBUG_MODE:
                                 print(f"[ESP32] Pico R detectado")
 
@@ -213,14 +215,15 @@ class SerialReaderArduino:
                 e_total = float(parts[5])
                 estado = parts[6]
 
-                if estado == "CARGA":
-                    data_manager.energia_carga_actual = e_total
-                elif estado == "ESPERANDO":
-                    pass
-                elif estado.startswith("DESCARGA"):
-                    data_manager.energia_fase1_actual = e_f1
-                    data_manager.energia_fase2_actual = e_f2
-                    data_manager.energia_total_ciclo = e_total
+                with data_manager.data_lock:
+                    if estado == "CARGA":
+                        data_manager.energia_carga_actual = e_total
+                    elif estado == "ESPERANDO":
+                        pass
+                    elif estado.startswith("DESCARGA"):
+                        data_manager.energia_fase1_actual = e_f1
+                        data_manager.energia_fase2_actual = e_f2
+                        data_manager.energia_total_ciclo = e_total
 
                     # Capturar datos para gráfica de descarga bifásica
                     with data_manager.data_lock:
@@ -234,10 +237,10 @@ class SerialReaderArduino:
                             data_manager.descarga_voltage_buffer.append(vcap)
                             data_manager.descarga_time_buffer.append(tiempo_relativo)
 
-                    if estado == "DESCARGA_F1" and (timestamp - data_manager.last_discharge_time > 1000):
-                        tiempo_desde_r = timestamp - data_manager.last_r_peak_time if data_manager.last_r_peak_time > 0 else 0
-                        data_manager.discharge_events.append((data_manager.sample_count, timestamp, tiempo_desde_r))
-                        data_manager.last_discharge_time = timestamp
+                        if estado == "DESCARGA_F1" and (timestamp - data_manager.last_discharge_time > 1000):
+                            tiempo_desde_r = timestamp - data_manager.last_r_peak_time if data_manager.last_r_peak_time > 0 else 0
+                            data_manager.discharge_events.append((data_manager.sample_count, timestamp, tiempo_desde_r))
+                            data_manager.last_discharge_time = timestamp
 
                 data_manager.write_csv_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
 

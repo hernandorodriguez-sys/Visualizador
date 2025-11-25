@@ -8,38 +8,44 @@ def on_lead_di_button(event, data_manager, serial_reader_esp32):
     """Cambiar a derivación DI"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DI")
-        data_manager.current_lead_index = 0
+        with data_manager.data_lock:
+            data_manager.current_lead_index = 0
         print("Cambio a derivacion DI")
 
 def on_lead_dii_button(event, data_manager, serial_reader_esp32):
     """Cambiar a derivación DII"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DII")
-        data_manager.current_lead_index = 1
+        with data_manager.data_lock:
+            data_manager.current_lead_index = 1
         print("Cambio a derivacion DII")
 
 def on_lead_diii_button(event, data_manager, serial_reader_esp32):
     """Cambiar a derivación DIII"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("DIII")
-        data_manager.current_lead_index = 2
+        with data_manager.data_lock:
+            data_manager.current_lead_index = 2
         print("Cambio a derivacion DIII")
 
 def on_lead_avr_button(event, data_manager, serial_reader_esp32):
     """Cambiar a derivación aVR"""
     if serial_reader_esp32:
         serial_reader_esp32.send_lead_command("AVR")
-        data_manager.current_lead_index = 3
+        with data_manager.data_lock:
+            data_manager.current_lead_index = 3
         print("Cambio a derivacion aVR")
 
 def on_charge_button(event, data_manager):
     """Callback para botón de carga manual"""
-    data_manager.force_charge = True
+    with data_manager.data_lock:
+        data_manager.force_charge = True
     print("🔋 Comando de CARGA MANUAL activado")
 
 def on_discharge_button(event, data_manager):
     """Callback para botón de descarga manual"""
-    data_manager.force_discharge = True
+    with data_manager.data_lock:
+        data_manager.force_discharge = True
     print("Comando de DESCARGA MANUAL activado")
 
 def setup_plot(data_manager, serial_reader_esp32):
@@ -225,51 +231,52 @@ def update_plot(frame, data_manager, line_raw, line_filtered, line_baseline, pea
             y_margin = 0.2 * (y_max_filt - y_min_filt) if y_max_filt != y_min_filt else 0.1
             ax2.set_ylim(y_min_filt - y_margin, y_max_filt + y_margin)
 
-    # Indicadores de conexión
-    esp32_status = "ESP32 OK" if data_manager.esp32_connected else "ESP32 ERR"
-    arduino_status = "ARD OK" if data_manager.arduino_connected else "ARD ERR"
+    with data_manager.data_lock:
+        # Indicadores de conexión
+        esp32_status = "ESP32 OK" if data_manager.esp32_connected else "ESP32 ERR"
+        arduino_status = "ARD OK" if data_manager.arduino_connected else "ARD ERR"
 
-    status_text.set_text(
-        f"{esp32_status} | {arduino_status} | Muestras: {len(y_raw)} | Filtro: Baseline EMA"
-    )
+        current_lead = get_current_lead(data_manager.current_lead_index)
 
-    current_lead = get_current_lead(data_manager.current_lead_index)
+        ultimo_tiempo_descarga = "N/A"
+        if discharge_list:
+            ultimo_tiempo_descarga = f"{discharge_list[-1][2]:.0f} ms"
 
-    ultimo_tiempo_descarga = "N/A"
-    if discharge_list:
-        ultimo_tiempo_descarga = f"{discharge_list[-1][2]:.0f} ms"
+        status_text.set_text(
+            f"{esp32_status} | {arduino_status} | Muestras: {len(y_raw)} | Filtro: Baseline EMA"
+        )
 
-    # Panel de información
-    info_text.set_text(
-        f"╔══════════════╗\n"
-        f"║  INFO ECG   ║\n"
-        f"╠══════════════╣\n"
-        f"║ CONEXIONES   ║\n"
-        f"║ ESP32: {'✓' if data_manager.esp32_connected else '✗':>5s}  ║\n"
-        f"║ ARD:   {'✓' if data_manager.arduino_connected else '✗':>5s}  ║\n"
-        f"╠══════════════╣\n"
-        f"║ DERIVACIÓN   ║\n"
-        f"║   {current_lead:^4s}       ║\n"
-        f"║ (Manual)     ║\n"
-        f"╠══════════════╣\n"
-        f"║ ENERGÍAS (J) ║\n"
-        f"║ Carga:       ║\n"
-        f"║  {data_manager.energia_carga_actual:>6.2f}      ║\n"
-        f"║ Fase 1:      ║\n"
-        f"║  {data_manager.energia_fase1_actual:>6.3f}      ║\n"
-        f"║ Fase 2:      ║\n"
-        f"║  {data_manager.energia_fase2_actual:>6.3f}      ║\n"
-        f"║ Total:       ║\n"
-        f"║  {data_manager.energia_total_ciclo:>6.3f}      ║\n"
-        f"╠══════════════╣\n"
-        f"║ ÚLTIMA DESC. ║\n"
-        f"║ {ultimo_tiempo_descarga:>9s}  ║\n"
-        f"║ (desde R)    ║\n"
-        f"╠══════════════╣\n"
-        f"║ TOTAL DESC.  ║\n"
-        f"║     {len(data_manager.discharge_events):>3d}       ║\n"
-        f"╚══════════════╝"
-    )
+        # Panel de información
+        info_text.set_text(
+            f"╔══════════════╗\n"
+            f"║  INFO ECG   ║\n"
+            f"╠══════════════╣\n"
+            f"║ CONEXIONES   ║\n"
+            f"║ ESP32: {'✓' if data_manager.esp32_connected else '✗':>5s}  ║\n"
+            f"║ ARD:   {'✓' if data_manager.arduino_connected else '✗':>5s}  ║\n"
+            f"╠══════════════╣\n"
+            f"║ DERIVACIÓN   ║\n"
+            f"║   {current_lead:^4s}       ║\n"
+            f"║ (Manual)     ║\n"
+            f"╠══════════════╣\n"
+            f"║ ENERGÍAS (J) ║\n"
+            f"║ Carga:       ║\n"
+            f"║  {data_manager.energia_carga_actual:>6.2f}      ║\n"
+            f"║ Fase 1:      ║\n"
+            f"║  {data_manager.energia_fase1_actual:>6.3f}      ║\n"
+            f"║ Fase 2:      ║\n"
+            f"║  {data_manager.energia_fase2_actual:>6.3f}      ║\n"
+            f"║ Total:       ║\n"
+            f"║  {data_manager.energia_total_ciclo:>6.3f}      ║\n"
+            f"╠══════════════╣\n"
+            f"║ ÚLTIMA DESC. ║\n"
+            f"║ {ultimo_tiempo_descarga:>9s}  ║\n"
+            f"║ (desde R)    ║\n"
+            f"╠══════════════╣\n"
+            f"║ TOTAL DESC.  ║\n"
+            f"║     {len(data_manager.discharge_events):>3d}       ║\n"
+            f"╚══════════════╝"
+        )
 
     return (line_raw, line_filtered, line_baseline, peaks_line,
             post_r_line, discharge_line, line_descarga, status_text, info_text)
