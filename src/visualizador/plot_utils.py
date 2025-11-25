@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
-from config import WINDOW_SIZE, Y_MIN, Y_MAX, MIN_PEAK_DISTANCE, POST_R_DELAY_SAMPLES
-from utils import detect_r_peaks_improved, calculate_post_r_markers, get_current_lead
+from .config import WINDOW_SIZE, Y_MIN, Y_MAX, MIN_PEAK_DISTANCE, POST_R_DELAY_SAMPLES
+from .utils import detect_r_peaks_improved, calculate_post_r_markers, get_current_lead
 
 def on_lead_di_button(event, data_manager, serial_reader_esp32):
     """Cambiar a derivación DI"""

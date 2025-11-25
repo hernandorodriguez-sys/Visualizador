@@ -1,12 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "visualizador"
 version = "0.1.0"
-description = "Add your description here"
+description = "Real-time ECG monitoring system with ESP32 and Arduino integration"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.14"
+authors = [
+    {name = "ECG Monitor Team"},
+]
+maintainers = [
+    {name = "ECG Monitor Team"},
+]
+keywords = ["ecg", "monitoring", "serial", "real-time", "visualization", "esp32", "arduino"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.3.5",
     "pyserial>=3.5",
     "scipy>=1.16.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/visualizador"
+Repository = "https://github.com/yourusername/visualizador.git"
+Issues = "https://github.com/yourusername/visualizador/issues"
+Documentation = "https://github.com/yourusername/visualizador/blob/main/docs/api.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/visualizador"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.black]
+line-length = 88
+target-version = ['py314']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["visualizador"]

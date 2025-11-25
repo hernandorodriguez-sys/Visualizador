@@ -3,11 +3,11 @@ import threading
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 
-from config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE, refresh_interval
-from data_manager import DataManager
-from serial_readers import SerialReaderESP32, SerialReaderArduino
-from plot_utils import setup_plot, update_plot
-from utils import init_csv
+from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE, refresh_interval
+from visualizador.data_manager import DataManager
+from visualizador.serial_readers import SerialReaderESP32, SerialReaderArduino
+from visualizador.plot_utils import setup_plot, update_plot
+from visualizador.utils import init_csv
 
 def main():
     print("=" * 70)

@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 from scipy import signal
 from scipy.ndimage import gaussian_filter1d
-from config import DEBUG_MODE, LEADS, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE, POST_R_DELAY_SAMPLES
+from .config import DEBUG_MODE, LEADS, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE, POST_R_DELAY_SAMPLES
 
 def init_csv():
     """Inicializa archivo CSV"""
