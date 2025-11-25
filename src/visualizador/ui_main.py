@@ -1,10 +1,95 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QTextEdit, QLabel
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout
 from PyQt6.QtCore import QTimer, pyqtSlot
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .data_manager import DataManager
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
 from .utils import init_csv, get_current_lead
+
+class DeviceStatusWidget(QGroupBox):
+    def __init__(self):
+        super().__init__("Device Status")
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.esp32_status = QLabel("ESP32: Disconnected")
+        self.esp32_status.setStyleSheet("color: red; font-weight: bold;")
+        layout.addWidget(self.esp32_status)
+
+        self.arduino_status = QLabel("Arduino: Disconnected")
+        self.arduino_status.setStyleSheet("color: red; font-weight: bold;")
+        layout.addWidget(self.arduino_status)
+
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def update_status(self, esp32_connected, arduino_connected):
+        if esp32_connected:
+            self.esp32_status.setText("ESP32: Connected")
+            self.esp32_status.setStyleSheet("color: green; font-weight: bold;")
+        else:
+            self.esp32_status.setText("ESP32: Disconnected")
+            self.esp32_status.setStyleSheet("color: red; font-weight: bold;")
+
+        if arduino_connected:
+            self.arduino_status.setText("Arduino: Connected")
+            self.arduino_status.setStyleSheet("color: green; font-weight: bold;")
+        else:
+            self.arduino_status.setText("Arduino: Disconnected")
+            self.arduino_status.setStyleSheet("color: red; font-weight: bold;")
+
+
+class CardioversorStatusWidget(QGroupBox):
+    def __init__(self):
+        super().__init__("Cardioversor Status")
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QGridLayout()
+
+        # Current lead
+        layout.addWidget(QLabel("Current Lead:"), 0, 0)
+        self.current_lead = QLabel("None")
+        self.current_lead.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self.current_lead, 0, 1)
+
+        # Energies
+        layout.addWidget(QLabel("Energies (J):"), 1, 0)
+        layout.addWidget(QLabel("Charge:"), 2, 0)
+        self.charge_energy = QLabel("0.000")
+        layout.addWidget(self.charge_energy, 2, 1)
+        layout.addWidget(QLabel("Phase 1:"), 3, 0)
+        self.phase1_energy = QLabel("0.000")
+        layout.addWidget(self.phase1_energy, 3, 1)
+        layout.addWidget(QLabel("Phase 2:"), 4, 0)
+        self.phase2_energy = QLabel("0.000")
+        layout.addWidget(self.phase2_energy, 4, 1)
+        layout.addWidget(QLabel("Total:"), 5, 0)
+        self.total_energy = QLabel("0.000")
+        self.total_energy.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self.total_energy, 5, 1)
+
+        # Discharge info
+        layout.addWidget(QLabel("Last Discharge:"), 1, 2)
+        self.last_discharge_time = QLabel("N/A")
+        layout.addWidget(self.last_discharge_time, 2, 2)
+        layout.addWidget(QLabel("Total Discharges:"), 3, 2)
+        self.total_discharges = QLabel("0")
+        layout.addWidget(self.total_discharges, 4, 2)
+
+        self.setLayout(layout)
+
+    def update_status(self, current_lead, charge_energy, phase1_energy, phase2_energy,
+                     total_energy, last_discharge_time, total_discharges):
+        self.current_lead.setText(current_lead)
+        self.charge_energy.setText(f"{charge_energy:.3f}")
+        self.phase1_energy.setText(f"{phase1_energy:.3f}")
+        self.phase2_energy.setText(f"{phase2_energy:.3f}")
+        self.total_energy.setText(f"{total_energy:.3f}")
+        self.last_discharge_time.setText(last_discharge_time)
+        self.total_discharges.setText(str(total_discharges))
 
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, serial_reader_esp32, serial_reader_arduino):
@@ -47,11 +132,13 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(buttons_layout)
 
-        # Info text
-        self.info_text = QTextEdit()
-        self.info_text.setReadOnly(True)
-        self.info_text.setMaximumHeight(300)
-        layout.addWidget(self.info_text)
+        # Status panels
+        status_layout = QHBoxLayout()
+        self.device_status = DeviceStatusWidget()
+        status_layout.addWidget(self.device_status)
+        self.cardioversor_status = CardioversorStatusWidget()
+        status_layout.addWidget(self.cardioversor_status)
+        layout.addLayout(status_layout)
 
         # Timer for updates
         self.timer = QTimer()
@@ -63,45 +150,28 @@ class MainWindow(QMainWindow):
         update_plot(self.data_manager, self.line_raw, self.status_text, self.ax)
         self.canvas.draw()
 
-        # Update info text
+        # Update status widgets
         with self.data_manager.data_lock:
-            esp32_status = "✓" if self.data_manager.esp32_connected else "✗"
-            arduino_status = "✓" if self.data_manager.arduino_connected else "✗"
             current_lead = get_current_lead(self.data_manager.current_lead_index)
             discharge_list = list(self.data_manager.discharge_events)
-            ultimo_tiempo_descarga = f"{discharge_list[-1][2]:.0f} ms" if discharge_list else "N/A"
+            last_discharge_time = f"{discharge_list[-1][2]:.0f} ms" if discharge_list else "N/A"
 
-            info = (
-                f"╔══════════════╗\n"
-                f"║  INFO ECG   ║\n"
-                f"╠══════════════╣\n"
-                f"║ CONEXIONES   ║\n"
-                f"║ ESP32: {esp32_status:>5s}  ║\n"
-                f"║ ARD:   {arduino_status:>5s}  ║\n"
-                f"╠══════════════╣\n"
-                f"║ DERIVACIÓN   ║\n"
-                f"║   {current_lead:^4s}       ║\n"
-                f"║ (Manual)     ║\n"
-                f"╠══════════════╣\n"
-                f"║ ENERGÍAS (J) ║\n"
-                f"║ Carga:       ║\n"
-                f"║  {self.data_manager.energia_carga_actual:>6.2f}      ║\n"
-                f"║ Fase 1:      ║\n"
-                f"║  {self.data_manager.energia_fase1_actual:>6.3f}      ║\n"
-                f"║ Fase 2:      ║\n"
-                f"║  {self.data_manager.energia_fase2_actual:>6.3f}      ║\n"
-                f"║ Total:       ║\n"
-                f"║  {self.data_manager.energia_total_ciclo:>6.3f}      ║\n"
-                f"╠══════════════╣\n"
-                f"║ ÚLTIMA DESC. ║\n"
-                f"║ {ultimo_tiempo_descarga:>9s}  ║\n"
-                f"║ (desde R)    ║\n"
-                f"╠══════════════╣\n"
-                f"║ TOTAL DESC.  ║\n"
-                f"║     {len(self.data_manager.discharge_events):>3d}       ║\n"
-                f"╚══════════════╝"
+            # Update device status
+            self.device_status.update_status(
+                esp32_connected=self.data_manager.esp32_connected,
+                arduino_connected=self.data_manager.arduino_connected
             )
-            self.info_text.setPlainText(info)
+
+            # Update cardioversor status
+            self.cardioversor_status.update_status(
+                current_lead=current_lead,
+                charge_energy=self.data_manager.energia_carga_actual,
+                phase1_energy=self.data_manager.energia_fase1_actual,
+                phase2_energy=self.data_manager.energia_fase2_actual,
+                total_energy=self.data_manager.energia_total_ciclo,
+                last_discharge_time=last_discharge_time,
+                total_discharges=len(self.data_manager.discharge_events)
+            )
 
     def on_lead_button(self, lead):
         if lead == 'DI':
