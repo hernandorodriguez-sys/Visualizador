@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox
 from PyQt6.QtCore import QTimer, pyqtSlot
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .data_manager import DataManager
@@ -91,6 +91,42 @@ class CardioversorStatusWidget(QGroupBox):
         self.last_discharge_time.setText(last_discharge_time)
         self.total_discharges.setText(str(total_discharges))
 
+
+class CardioversorControlWidget(QGroupBox):
+    def __init__(self, serial_reader_arduino):
+        super().__init__("Cardioversor Control")
+        self.serial_reader_arduino = serial_reader_arduino
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.armar_button = QPushButton("ARMAR")
+        self.armar_button.setStyleSheet("background-color: red; color: white; font-weight: bold; padding: 10px;")
+        self.armar_button.clicked.connect(self.on_armar_clicked)
+        layout.addWidget(self.armar_button)
+
+        self.desarmar_button = QPushButton("Desarmar")
+        self.desarmar_button.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 10px;")
+        self.desarmar_button.clicked.connect(self.on_desarmar_clicked)
+        layout.addWidget(self.desarmar_button)
+
+        self.setLayout(layout)
+
+    def on_armar_clicked(self):
+        reply = QMessageBox.question(
+            self, 'Confirmar ARMAR',
+            "¿Está seguro de que desea ARMAR el cardioversor?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.serial_reader_arduino.send_command("ARM")
+
+    def on_desarmar_clicked(self):
+        self.serial_reader_arduino.send_command("DISARM")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, serial_reader_esp32, serial_reader_arduino):
         super().__init__()
@@ -138,6 +174,8 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.device_status)
         self.cardioversor_status = CardioversorStatusWidget()
         status_layout.addWidget(self.cardioversor_status)
+        self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino)
+        status_layout.addWidget(self.cardioversor_control)
         layout.addLayout(status_layout)
 
         # Timer for updates
