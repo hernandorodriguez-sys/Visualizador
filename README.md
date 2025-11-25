@@ -4,13 +4,13 @@ A real-time ECG monitoring system that reads data from ESP32 and Arduino devices
 
 ## Features
 
-- **Real-time ECG Monitoring**: Continuous acquisition from ESP32 ADC
-- **R-Peak Detection**: Automatic detection of R-peaks in ECG signals
-- **Interactive Visualization**: Live plotting with matplotlib
+- **Real-time ECG Monitoring**: Continuous acquisition from ESP32 ADC with PyQt UI
+- **Thread-safe Plotting**: Safe realtime plotting using PyQt threads
+- **ADC Raw Signal Display**: Direct visualization of raw ADC data
 - **Manual Lead Control**: Switch between ECG leads (DI, DII, DIII, aVR)
 - **Energy Monitoring**: Track capacitor discharge energy from Arduino
 - **Data Logging**: Automatic CSV export of all measurements
-- **Baseline Filtering**: EMA-based drift compensation
+- **Info Panel**: Real-time status and energy information display
 
 ## Installation
 
@@ -26,6 +26,8 @@ Using uv (recommended):
 ```bash
 uv sync
 ```
+
+See [SETUP.md](SETUP.md) for detailed uv installation and setup instructions.
 
 Or using pip:
 ```bash
@@ -44,8 +46,10 @@ pip install -r requirements.txt
 ### Basic Usage
 
 ```bash
-python main.py
+uv run python main.py
 ```
+
+See [SETUP.md](SETUP.md) for detailed execution instructions using uv.
 
 ### Configuration
 
@@ -59,8 +63,9 @@ Edit `src/visualizador/config.py` to adjust:
 ### Controls
 
 - **Lead Buttons**: Click DI/DII/DIII/aVR to switch ECG leads
-- **Manual Control**: Use buttons for capacitor charge/discharge
-- **Visualization**: Real-time ECG plot with R-peak markers
+- **Manual Control**: Use buttons for capacitor charge/discharge (via Arduino)
+- **Visualization**: Real-time ADC raw signal plot in PyQt window
+- **Info Panel**: Bottom panel shows connection status, energies, and discharge info
 
 ## Project Structure
 
@@ -72,14 +77,16 @@ visualizador/
 │       ├── config.py          # Configuration parameters
 │       ├── data_manager.py    # Thread-safe data management
 │       ├── filters.py         # Signal processing filters
-│       ├── plot_utils.py      # Matplotlib visualization
+│       ├── plot_utils.py      # Matplotlib plotting utilities
 │       ├── serial_readers.py  # Serial communication
+│       ├── ui_main.py         # PyQt main window
 │       └── utils.py           # Utility functions
 ├── tests/
 │   ├── __init__.py
 │   └── test_filters.py    # Unit tests
 ├── docs/
 │   └── api.md             # API documentation
+├── SETUP.md               # Detailed setup guide
 ├── main.py                # Entry point
 ├── pyproject.toml         # Project configuration
 └── README.md
@@ -93,7 +100,7 @@ See [docs/api.md](docs/api.md) for detailed API reference.
 
 Run tests with:
 ```bash
-python -m pytest tests/
+uv run python -m pytest tests/
 ```
 
 ## Development
@@ -121,6 +128,7 @@ Please read CONTRIBUTING.md for details on our code of conduct and the process f
 
 ## Acknowledgments
 
-- Built with matplotlib for visualization
+- Built with PyQt6 for the user interface
+- Matplotlib for real-time plotting within PyQt
 - Uses scipy for signal processing
 - Serial communication via pyserial
