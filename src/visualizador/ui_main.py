@@ -207,6 +207,52 @@ class LeadControlWidget(QGroupBox):
             on_lead_avr_button(None, self.data_manager, self.serial_reader_esp32)
 
 
+class DataRecorderControlWidget(QGroupBox):
+    def __init__(self, data_manager):
+        super().__init__("Data Recorder")
+        self.data_manager = data_manager
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.start_button = QPushButton("Start Recording")
+        self.start_button.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 5px;")
+        self.start_button.clicked.connect(self.on_start_clicked)
+        layout.addWidget(self.start_button)
+
+        self.stop_button = QPushButton("Stop Recording")
+        self.stop_button.setStyleSheet("background-color: red; color: white; font-weight: bold; padding: 5px;")
+        self.stop_button.clicked.connect(self.on_stop_clicked)
+        layout.addWidget(self.stop_button)
+
+        self.status_label = QLabel("Recording: ON")
+        self.status_label.setStyleSheet("font-weight: bold; color: green;")
+        layout.addWidget(self.status_label)
+
+        self.setLayout(layout)
+
+    def on_start_clicked(self):
+        with self.data_manager.data_lock:
+            self.data_manager.is_recording = True
+        self.update_status()
+
+    def on_stop_clicked(self):
+        with self.data_manager.data_lock:
+            self.data_manager.is_recording = False
+        self.update_status()
+
+    def update_status(self):
+        with self.data_manager.data_lock:
+            is_recording = self.data_manager.is_recording
+        if is_recording:
+            self.status_label.setText("Recording: ON")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
+        else:
+            self.status_label.setText("Recording: OFF")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, data_manager, serial_reader_esp32, serial_reader_arduino):
         super().__init__()
@@ -240,6 +286,8 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.fire_control)
         self.lead_control = LeadControlWidget(self.data_manager, self.serial_reader_esp32)
         status_layout.addWidget(self.lead_control)
+        self.data_recorder_control = DataRecorderControlWidget(self.data_manager)
+        status_layout.addWidget(self.data_recorder_control)
         layout.addLayout(status_layout)
 
         # Timer for updates
@@ -274,6 +322,9 @@ class MainWindow(QMainWindow):
                 last_discharge_time=last_discharge_time,
                 total_discharges=len(self.data_manager.discharge_events)
             )
+
+        # Update data recorder status
+        self.data_recorder_control.update_status()
 
     def closeEvent(self, event):
         self.timer.stop()

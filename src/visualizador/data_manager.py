@@ -39,6 +39,7 @@ class DataManager:
         self.csv_filename = None
         self.csv_file = None
         self.csv_writer = None
+        self.is_recording = True  # Start recording by default
 
         # Control manual
         self.force_charge = False
@@ -48,4 +49,5 @@ class DataManager:
         self.baseline_filter = BaselineEMA(alpha=0.995)
 
     def write_csv_row(self, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
-        write_csv_row(self.csv_writer, self.csv_file, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
+        if self.is_recording:
+            write_csv_row(self.csv_writer, self.csv_file, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
