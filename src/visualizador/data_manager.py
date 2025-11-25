@@ -1,7 +1,7 @@
 import threading
 from collections import deque
 from .filters import BaselineEMA
-from .utils import write_csv_row
+from .data_recorder import DataRecorder
 from .config import buffer_size
 
 class DataManager:
@@ -35,11 +35,8 @@ class DataManager:
         self.energia_fase2_actual = 0.0
         self.energia_total_ciclo = 0.0
 
-        # CSV
-        self.csv_filename = None
-        self.csv_file = None
-        self.csv_writer = None
-        self.is_recording = True  # Start recording by default
+        # Data Recorder
+        self.data_recorder = DataRecorder()
 
         # Control manual
         self.force_charge = False
@@ -49,5 +46,4 @@ class DataManager:
         self.baseline_filter = BaselineEMA(alpha=0.995)
 
     def write_csv_row(self, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
-        if self.is_recording:
-            write_csv_row(self.csv_writer, self.csv_file, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
+        self.data_recorder.write_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)

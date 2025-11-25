@@ -4,7 +4,7 @@ from PyQt6.QtCore import QTimer, pyqtSlot
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .data_manager import DataManager
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
-from .utils import init_csv, get_current_lead
+from .utils import get_current_lead
 
 class DeviceStatusWidget(QGroupBox):
     def __init__(self):
@@ -234,17 +234,17 @@ class DataRecorderControlWidget(QGroupBox):
 
     def on_start_clicked(self):
         with self.data_manager.data_lock:
-            self.data_manager.is_recording = True
+            self.data_manager.data_recorder.start_recording()
         self.update_status()
 
     def on_stop_clicked(self):
         with self.data_manager.data_lock:
-            self.data_manager.is_recording = False
+            self.data_manager.data_recorder.stop_recording()
         self.update_status()
 
     def update_status(self):
         with self.data_manager.data_lock:
-            is_recording = self.data_manager.is_recording
+            is_recording = self.data_manager.data_recorder.is_recording
         if is_recording:
             self.status_label.setText("Recording: ON")
             self.status_label.setStyleSheet("font-weight: bold; color: green;")
@@ -330,6 +330,5 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.serial_reader_esp32.stop()
         self.serial_reader_arduino.stop()
-        if self.data_manager.csv_file:
-            self.data_manager.csv_file.close()
+        self.data_manager.data_recorder.close()
         event.accept()

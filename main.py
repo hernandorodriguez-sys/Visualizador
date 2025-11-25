@@ -7,7 +7,7 @@ from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RAT
 from visualizador.data_manager import DataManager
 from visualizador.serial_readers import SerialReaderESP32, SerialReaderArduino
 from visualizador.ui_main import MainWindow
-from visualizador.utils import init_csv
+from visualizador.data_recorder import DataRecorder
 
 def main():
     print("=" * 70)
@@ -30,7 +30,7 @@ def main():
 
     # Initialize data manager
     data_manager = DataManager()
-    data_manager.csv_filename, data_manager.csv_file, data_manager.csv_writer = init_csv()
+    data_manager.data_recorder.start_recording()
 
     # Initialize serial readers
     serial_reader_esp32 = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE)
@@ -83,9 +83,7 @@ def main():
         print("\nCerrando conexiones seriales...")
         serial_reader_esp32.stop()
         serial_reader_arduino.stop()
-        if data_manager.csv_file:
-            data_manager.csv_file.close()
-            print(f"Archivo CSV guardado: {data_manager.csv_filename}")
+        data_manager.data_recorder.close()
         print("Aplicacion cerrada correctamente")
 
 if __name__ == "__main__":
