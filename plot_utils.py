@@ -52,11 +52,11 @@ def setup_plot(data_manager, serial_reader_esp32):
     """Configura la interfaz gráfica"""
     plt.style.use('default')
 
-    fig = plt.figure(figsize=(18, 10))
+    fig = plt.figure(figsize=(14, 8))
 
     # Grid layout ajustado
-    gs = fig.add_gridspec(4, 4, height_ratios=[2, 2, 1, 0.4], width_ratios=[1, 1, 1, 0.25],
-                          hspace=0.35, wspace=0.30, left=0.05, right=0.98, top=0.96, bottom=0.05)
+    gs = fig.add_gridspec(4, 4, height_ratios=[2, 2, 1, 0.4], width_ratios=[1, 1, 1, 0.35],
+                          hspace=0.35, wspace=0.30, left=0.06, right=0.97, top=0.96, bottom=0.06)
 
     fig.patch.set_facecolor('#FFE4E1')
 
@@ -128,8 +128,8 @@ def setup_plot(data_manager, serial_reader_esp32):
                            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.9, edgecolor='gray'))
 
     info_text = ax_info.text(0.05, 0.95, '', transform=ax_info.transAxes,
-                             verticalalignment='top', fontsize=9, color='black', family='monospace',
-                             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow",
+                             verticalalignment='top', fontsize=8, color='black', family='monospace',
+                             bbox=dict(boxstyle="round,pad=0.4", facecolor="lightyellow",
                                       alpha=0.95, edgecolor='black', linewidth=2))
 
     ax1.legend(loc='upper right', fontsize=8, ncol=1)
