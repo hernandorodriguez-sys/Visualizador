@@ -63,7 +63,7 @@ def setup_plot(ui_service):
     line_raw = plot_widget.plot([], [], pen=pg.mkPen('black', width=1.2, alpha=0.95), name='ECG Raw')
 
     # Create scatter plot item for R-peaks
-    r_peak_scatter = pg.ScatterPlotItem(size=8, pen=pg.mkPen('red'), brush=pg.mkBrush('red'), symbol='o', name='R-Peaks')
+    r_peak_scatter = pg.ScatterPlotItem(size=12, pen=pg.mkPen('red'), brush=pg.mkBrush('red'), symbol='o', name='R-Peaks')
     plot_widget.addItem(r_peak_scatter)
 
     # Add legend
@@ -136,7 +136,7 @@ def update_plot(ui_service, plot_widget, line_raw, r_peak_scatter, status_text):
                 if 0 <= relative_idx < len(x_visible):
                     peak_voltage = ui_service.voltage_buffer[peak_sample_idx]
                     peak_x_pos = x_visible[relative_idx]
-                    visible_r_peaks.append({'pos': (peak_x_pos, peak_voltage), 'size': 8, 'pen': 'r', 'brush': 'r'})
+                    visible_r_peaks.append({'pos': (peak_x_pos, peak_voltage), 'size': 12, 'pen': 'r', 'brush': 'r'})
 
         r_peak_scatter.setData(visible_r_peaks)
     else:

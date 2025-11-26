@@ -3,7 +3,7 @@ import time
 import threading
 import queue
 import logging
-from .config import DEBUG_MODE, BAUD_RATE, SAMPLE_RATE, POST_R_DELAY_SAMPLES, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE
+from .config import DEBUG_MODE, SAMPLE_RATE, POST_R_DELAY_SAMPLES, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE
 import numpy as np
 from scipy import signal
 from .data_types import ADCData
@@ -28,7 +28,11 @@ class SerialReaderESP32:
         # Processing thread components
         self.processing_queue = queue.Queue(maxsize=30000)
         self.processing_thread = None
+        self.thread = None
         self.signal_processing_service = None
+
+        # FSM state
+        self.current_phase = 'idle'  # 'idle', 'charge', 'discharge'
 
     def connect(self):
         if self.connection_attempts >= self.max_connection_attempts:
@@ -60,6 +64,16 @@ class SerialReaderESP32:
         if self.ser and self.ser.is_open:
             try:
                 cmd = f"LEAD_{lead_name}\n"
+                self.ser.write(cmd.encode())
+                print(f"[ESP32] Comando enviado: {cmd.strip()}")
+            except Exception as e:
+                print(f"[ESP32] ❌ Error enviando comando: {e}")
+
+    def send_command(self, command):
+        """Envía comandos directos al ESP32 para control FSM"""
+        if self.ser and self.ser.is_open:
+            try:
+                cmd = f"{command}\n"
                 self.ser.write(cmd.encode())
                 print(f"[ESP32] Comando enviado: {cmd.strip()}")
             except Exception as e:
@@ -119,7 +133,7 @@ class SerialReaderESP32:
                 time.sleep(0.01)
 
     def read_data(self, adc_service):
-        """Lee datos ECG usando sincronización robusta"""
+        """Lee datos ECG usando sincronización robusta con throttling dinámico"""
         print("[ESP32] Iniciando lectura de datos ECG...")
         last_log_time = time.time()
 
@@ -156,10 +170,19 @@ class SerialReaderESP32:
                                 print(f"[ESP32] Pico R detectado")
 
                         if "DISPARO:" in text:
-                            metadata = {'disparo': text.strip()}
+                            self.current_phase = 'discharge'
+                            metadata = {'disparo': text.strip(), 'phase': self.current_phase}
                             adc_service.on_esp32_data(0.0, metadata)  # Send metadata without voltage
                             if DEBUG_MODE:
                                 print(f"[ESP32] {text.strip()}")
+
+                        # Add phase parsing for CHARGE if available
+                        if "CHARGE:" in text:
+                            self.current_phase = 'charge'
+                            metadata = {'phase': self.current_phase}
+                            adc_service.on_esp32_data(0.0, metadata)
+                            if DEBUG_MODE:
+                                print(f"[ESP32] Phase changed to charge")
                     except:
                         pass
 
@@ -184,18 +207,19 @@ class SerialReaderESP32:
                             voltage = self.decode_packet(packet)
 
                             if voltage is not None:
-                                # Send raw voltage data to ADC service (for UI consumption)
-                                adc_service.on_esp32_data(voltage)
+                                # Send raw voltage data to ADC service (for UI consumption) with phase
+                                metadata = {'phase': self.current_phase}
+                                adc_service.on_esp32_data(voltage, metadata)
 
-                                # Put decoded data in processing queue for filter functions
-                                # Non-blocking: drop oldest if full to keep latest data
+                                # Put decoded data in processing queue with back-pressure
+                                # Use blocking put with short timeout to avoid blocking acquisition
                                 try:
-                                    self.processing_queue.put_nowait((voltage, None))
+                                    self.processing_queue.put((voltage, metadata), block=True, timeout=0.001)
                                 except queue.Full:
-                                    # Drop oldest to make room for new
+                                    # Drop oldest to make room for new, but throttle if consistently full
                                     try:
                                         self.processing_queue.get_nowait()
-                                        self.processing_queue.put_nowait((voltage, None))
+                                        self.processing_queue.put_nowait((voltage, metadata))
                                     except queue.Empty:
                                         pass
 
@@ -215,7 +239,16 @@ class SerialReaderESP32:
                             pass
                         last_log_time = current_time
 
-                time.sleep(0.001)  # Reduced polling frequency to lower CPU usage
+                # Dynamic throttling: slow down if processing queue is near full
+                queue_size = self.processing_queue.qsize()
+                if queue_size > 25000:  # Near max 30000
+                    sleep_time = 0.01  # Slow down acquisition
+                elif queue_size > 20000:
+                    sleep_time = 0.005
+                else:
+                    sleep_time = 0.0001  # Fast polling when queue not full
+
+                time.sleep(sleep_time)
 
             except Exception as e:
                 if DEBUG_MODE:
@@ -234,9 +267,9 @@ class SerialReaderESP32:
 
     def stop(self):
         self.running = False
-        if hasattr(self, 'processing_thread') and self.processing_thread.is_alive():
+        if self.processing_thread and self.processing_thread.is_alive():
             self.processing_thread.join(timeout=1.0)
-        if hasattr(self, 'thread') and self.thread.is_alive():
+        if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
         if self.ser:
             self.ser.close()
@@ -282,26 +315,47 @@ class SerialReaderArduino:
         return False
 
     def send_command(self, command):
-        """Envía comandos al Arduino"""
+        """Envía comandos al Arduino usando bytes específicos"""
         if self.ser and self.ser.is_open:
             try:
-                self.ser.write(f"{command}\n".encode())
-                print(f"[ARDUINO] Comando enviado: {command}")
+                # Map commands to single bytes
+                command_map = {
+                    "ARM": b'C',        # Start charging
+                    "DISARM": b'D',     # Disarm
+                    "MANUAL_TRIGGER": b'\x01',  # Trigger discharge from ARMED
+                    "AUTO_TRIGGER": b'\x01',    # Same as manual
+                    "TEST_FIRE": b'T'   # Test fire
+                }
+
+                if command in command_map:
+                    self.ser.write(command_map[command])
+                    print(f"[ARDUINO] Comando enviado: {command} ({command_map[command]})")
+                else:
+                    print(f"[ARDUINO] Comando desconocido: {command}")
             except Exception as e:
                 print(f"[ARDUINO] ❌ Error enviando comando: {e}")
 
     def process_arduino_data(self, line, adc_service):
-        """Procesa datos del Arduino (formato CSV)"""
+        """Procesa datos del Arduino (formato T:timestamp,POS:voltage,I:current,E+:energy)"""
         try:
+            # Parse format: T:timestamp,POS:voltage,I:current,E+:energy
+            data = {}
             parts = line.strip().split(',')
-            if len(parts) == 7:
-                timestamp = int(parts[0])
-                vcap = float(parts[1])
-                corriente = float(parts[2])
-                e_f1 = float(parts[3])
-                e_f2 = float(parts[4])
-                e_total = float(parts[5])
-                estado = parts[6]
+            for part in parts:
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    data[key] = value
+
+            if 'T' in data and 'POS' in data and 'I' in data and 'E+' in data:
+                timestamp = int(float(data['T']))
+                vcap = float(data['POS'])
+                corriente = float(data['I'])
+                e_total = float(data['E+'])
+
+                # For compatibility, set e_f1 and e_f2 to 0 or parse if available
+                e_f1 = 0.0
+                e_f2 = 0.0
+                estado = "UNKNOWN"  # Could be derived from commands sent
 
                 # Send energy data to ADC service
                 metadata = {

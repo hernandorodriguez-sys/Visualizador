@@ -69,12 +69,13 @@ class UIService(QObject):
         self.current_bpm = 0.0
 
         # Plot settings
-        self.plot_y_min = -0.5
-        self.plot_y_max = 4.0
+        self.plot_y_min = -2.0
+        self.plot_y_max = 2.0
         self.plot_window_size = 1500
         self.plot_time_window = 0.75  # 0.75 seconds (1500 samples at 2000 Hz)
         self.plot_time_axis = False
         self.signal_gain = 1.0
+        self.signal_offset = 0.0  # Manual vertical offset for display
 
         # Data recorder
         self.data_recorder = DataRecorder()
@@ -211,11 +212,12 @@ class UIService(QObject):
                             self.voltage_buffer.append(interpolated_voltage)
                             self.time_buffer.append(self.sample_count + i)
 
-                # Apply gain to raw voltage
+                # Apply gain and offset to raw voltage for display
                 voltage_with_gain = processed_data.raw_voltage * self.signal_gain
+                voltage_display = voltage_with_gain + self.signal_offset
 
                 # Store in buffers
-                self.voltage_buffer.append(voltage_with_gain)
+                self.voltage_buffer.append(voltage_display)
                 self.time_buffer.append(processed_data.sample_count)
                 self.sample_count = processed_data.sample_count
 

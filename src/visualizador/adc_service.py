@@ -5,7 +5,7 @@ from typing import NamedTuple, Optional
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
 from .signal_processing_service import SignalProcessingService
 from .data_types import ADCData
-from .config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
+from .config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE_ESP32, BAUD_RATE_ARDUINO
 
 
 class ADCService:
@@ -27,8 +27,8 @@ class ADCService:
         self.max_connection_attempts = 5
 
         # Serial readers
-        self.esp32_reader = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE, self.max_connection_attempts)
-        self.arduino_reader = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE, self.max_connection_attempts)
+        self.esp32_reader = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE_ESP32, self.max_connection_attempts)
+        self.arduino_reader = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE_ARDUINO, self.max_connection_attempts)
 
         # Signal processing service
         self.signal_processing_service = SignalProcessingService()
@@ -128,7 +128,10 @@ class ADCService:
             while True:
                 command, target = self.command_queue.get_nowait()
                 if target == "esp32":
-                    self.esp32_reader.send_lead_command(command)
+                    if command.startswith("LEAD_"):
+                        self.esp32_reader.send_lead_command(command[5:])  # Remove "LEAD_" prefix
+                    else:
+                        self.esp32_reader.send_command(command)
                 elif target == "arduino":
                     self.arduino_reader.send_command(command)
         except queue.Empty:

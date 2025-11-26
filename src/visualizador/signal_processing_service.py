@@ -6,7 +6,7 @@ from collections import deque
 import numpy as np
 from scipy import signal
 from typing import NamedTuple, Optional
-from .config import SAMPLE_RATE, MIN_PEAK_HEIGHT, MIN_PEAK_DISTANCE, PEAK_WIDTH_MIN, PEAK_PROMINENCE
+from .config import SAMPLE_RATE, MIN_PEAK_HEIGHT, MIN_PEAK_DISTANCE, PEAK_WIDTH_MIN, PEAK_PROMINENCE, BASELINE_CORRECTION_ENABLED, BASELINE_WINDOW_SIZE
 from .data_types import ADCData
 from .r_peak_detector import detect_r_peaks
 
@@ -38,15 +38,18 @@ class SignalProcessingService:
         self.ui_service = None
 
         # Processing buffers
-        self.signal_buffer = deque(maxlen=1000)  # Keep last 1000 samples for peak detection
-        self.buffer_size = 1000  # Size for filtering window
+        self.signal_buffer = deque(maxlen=BASELINE_WINDOW_SIZE)  # Keep last N samples for baseline and peak detection
+        self.buffer_size = BASELINE_WINDOW_SIZE  # Size for baseline window
         self.sample_count = 0
         self.last_log_time = time.time()
 
+        # Thread synchronization
+        self.buffer_lock = threading.Lock()
+
         # Filter parameters
         self.nyquist = SAMPLE_RATE / 2
-        # Configurable low-pass filter: default 30 Hz cutoff, order 8
-        self.cutoff = 30.0
+        # Configurable low-pass filter: default 25 Hz cutoff, order 8 for cleaner ECG
+        self.cutoff = 25.0
         self.order = 8
 
         # Design Butterworth low-pass filter
@@ -54,8 +57,8 @@ class SignalProcessingService:
         self.filter_state = signal.lfilter_zi(self.b, self.a)
 
         # R-peak detection parameters
-        self.r_peak_enabled = False  # Default disabled
-        self.r_peak_threshold = 0.1  # Default threshold in volts
+        self.r_peak_enabled = True  # Default enabled
+        self.r_peak_threshold = 0.2  # Default threshold in volts
 
         print("Signal Processing Service initialized")
 
@@ -107,7 +110,8 @@ class SignalProcessingService:
         # Clean queues and buffers
         self.input_queue = queue.Queue(maxsize=30000)
         self.output_queue = queue.Queue(maxsize=30000)
-        self.signal_buffer.clear()
+        with self.buffer_lock:
+            self.signal_buffer.clear()
         self.sample_count = 0
         self.last_log_time = time.time()
         # Reset filter state
@@ -143,13 +147,19 @@ class SignalProcessingService:
         return clamped
 
     def _detect_peaks(self, filtered_signal) -> list:
-        """Detect peaks in the filtered signal using simple threshold-based detection"""
+        """Detect peaks in the filtered signal using adaptive threshold-based detection"""
         if len(filtered_signal) < MIN_PEAK_DISTANCE:
             return []
 
         # Use R-peak specific parameters if enabled
         if self.r_peak_enabled:
-            threshold = self.r_peak_threshold
+            # Adaptive threshold: base on signal statistics
+            signal_mean = np.mean(filtered_signal)
+            signal_std = np.std(filtered_signal)
+            # Threshold is mean + 3*std for significant peaks, clamped
+            adaptive_threshold = max(0.05, min(2.0, signal_mean + 3 * signal_std))
+            # Use adaptive threshold
+            threshold = adaptive_threshold
             distance = MIN_PEAK_DISTANCE
         else:
             threshold = MIN_PEAK_HEIGHT
@@ -170,24 +180,26 @@ class SignalProcessingService:
                 # Apply filtering
                 filtered_voltage = self._apply_filter(adc_data.voltage)
 
-                # Add to signal buffer for peak detection
-                self.signal_buffer.append(filtered_voltage)
+                # Apply baseline correction using sliding window mean
+                with self.buffer_lock:
+                    if BASELINE_CORRECTION_ENABLED and len(self.signal_buffer) >= BASELINE_WINDOW_SIZE:
+                        baseline = np.mean(list(self.signal_buffer))
+                        filtered_voltage -= baseline
 
-                # Periodically reset filter state to prevent drift (disabled to avoid glitches)
-                # if self.sample_count % 10000 == 0:  # Reset every 10000 samples
-                #     self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
+                    # Add to signal buffer for baseline and peak detection
+                    self.signal_buffer.append(filtered_voltage)
 
-                # Detect R-peaks periodically (every 500 samples to avoid overhead) if enabled
-                peaks = []
-                if self.r_peak_enabled and self.sample_count % 500 == 0 and len(self.signal_buffer) >= MIN_PEAK_DISTANCE:
-                    # Check last 200 samples for peaks
-                    window_signal = list(self.signal_buffer)[-200:]
-                    window_peaks = self._detect_peaks(window_signal)
+                    # Detect R-peaks more frequently (every 100 samples for better real-time) if enabled
+                    peaks = []
+                    if self.r_peak_enabled and self.sample_count % 100 == 0 and len(self.signal_buffer) >= 200:
+                        # Check last 300 samples for peaks to ensure continuity and stable statistics
+                        window_size = min(300, len(self.signal_buffer))
+                        window_signal = list(self.signal_buffer)[-window_size:]
+                        window_peaks = self._detect_peaks(window_signal)
 
-                    # Convert window indices to absolute sample indices
-                    # The window starts at len(self.signal_buffer) - 200
-                    window_start_idx = len(self.signal_buffer) - 200
-                    peaks = [window_start_idx + peak_idx for peak_idx in window_peaks]
+                        # Convert window indices to absolute sample indices
+                        window_start_idx = len(self.signal_buffer) - window_size
+                        peaks = [window_start_idx + peak_idx for peak_idx in window_peaks]
 
 
                 # Create processed data

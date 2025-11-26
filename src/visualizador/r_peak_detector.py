@@ -2,14 +2,15 @@
 Functions for R-peak detection in ECG signals.
 """
 import numpy as np
+from scipy import signal
 
 def detect_r_peaks(signal_data, threshold, distance):
     """
-    Detects R-peaks in a signal based on a simple threshold and distance criteria.
+    Detects R-peaks in a signal using scipy's find_peaks with height and prominence.
 
     Args:
         signal_data (list or np.array): The ECG signal.
-        threshold (float): The minimum amplitude for a peak.
+        threshold (float): The minimum height for a peak.
         distance (int): The minimum number of samples between peaks.
 
     Returns:
@@ -18,20 +19,12 @@ def detect_r_peaks(signal_data, threshold, distance):
     if len(signal_data) < 3:
         return []
 
-    peaks = []
-    last_peak = -distance
+    # Use scipy find_peaks with height and distance
+    # Prominence helps detect significant peaks
+    prominence = threshold * 0.5  # Prominence at least half the threshold
+    peaks, _ = signal.find_peaks(signal_data, height=threshold, distance=distance, prominence=prominence)
 
-    # Simple peak detection: a point is a peak if it's greater than its neighbours
-    for i in range(1, len(signal_data) - 1):
-        if (signal_data[i] > threshold and
-            signal_data[i] > signal_data[i-1] and
-            signal_data[i] > signal_data[i+1]):
-
-            if i - last_peak >= distance:
-                peaks.append(i)
-                last_peak = i
-
-    return peaks
+    return peaks.tolist()
 
 def calculate_bpm(peaks, sample_rate):
     """

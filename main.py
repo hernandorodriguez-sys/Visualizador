@@ -3,7 +3,7 @@ import threading
 import sys
 from PyQt6.QtWidgets import QApplication
 
-from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
+from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE_ESP32, BAUD_RATE_ARDUINO
 from visualizador.adc_service import ADCService
 from visualizador.ui_service import UIService
 
@@ -11,9 +11,8 @@ def main():
     print("=" * 70)
     print("MONITOR ECG - CONTROL MANUAL DE DERIVACIONES")
     print("=" * 70)
-    print(f"ESP32 (ECG):       {SERIAL_PORT_ESP32}")
-    print(f"Arduino (Control): {SERIAL_PORT_ARDUINO}")
-    print(f"Baud Rate:         {BAUD_RATE}")
+    print(f"ESP32 (ECG):       {SERIAL_PORT_ESP32} @ {BAUD_RATE_ESP32} baud")
+    print(f"Arduino (Control): {SERIAL_PORT_ARDUINO} @ {BAUD_RATE_ARDUINO} baud")
     print("-" * 70)
     print("CONTROL DE DERIVACIONES:")
     print("  Boton DI   - Derivacion I")

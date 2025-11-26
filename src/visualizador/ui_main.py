@@ -6,7 +6,9 @@ from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .ui_service import UIService
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
+from .config import BASELINE_CORRECTION_ENABLED
 import pyqtgraph as pg
+import numpy as np
 
 class DeviceStatusWidget(QGroupBox):
     def __init__(self):
@@ -450,6 +452,11 @@ class RecordedDataViewer(QDialog):
                         et = float(et_str) if et_str else 0.0
                         self.data['e_total'].append(et)
 
+            # Apply baseline correction to ECG data if enabled
+            if BASELINE_CORRECTION_ENABLED and self.data['ecg']:
+                baseline = np.mean(self.data['ecg'])
+                self.data['ecg'] = [x - baseline for x in self.data['ecg']]
+
             self.on_column_changed(self.column_combo.currentText())
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load CSV: {str(e)}")
@@ -863,12 +870,23 @@ class PlotControlWidget(QGroupBox):
         self.gain_label = QLabel(f"{self.ui_service.signal_gain:.1f}x")
         layout.addWidget(self.gain_label, 4, 2)
 
+        # Signal offset control
+        layout.addWidget(QLabel("Signal Offset:"), 5, 0)
+        self.offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self.offset_slider.setRange(-50, 50)  # -5.0 to 5.0 V
+        self.offset_slider.setValue(int(self.ui_service.signal_offset * 10))
+        self.offset_slider.valueChanged.connect(self.on_offset_changed)
+        layout.addWidget(self.offset_slider, 5, 1)
+
+        self.offset_label = QLabel(f"{self.ui_service.signal_offset:.1f}V")
+        layout.addWidget(self.offset_label, 5, 2)
+
         # Time axis toggle
-        layout.addWidget(QLabel("Time Axis:"), 5, 0)
+        layout.addWidget(QLabel("Time Axis:"), 6, 0)
         self.time_axis_check = QCheckBox("Use Time (s)")
         self.time_axis_check.setChecked(self.ui_service.plot_time_axis)
         self.time_axis_check.stateChanged.connect(self.on_time_axis_changed)
-        layout.addWidget(self.time_axis_check, 5, 1)
+        layout.addWidget(self.time_axis_check, 6, 1)
 
         self.setLayout(layout)
 
@@ -898,6 +916,11 @@ class PlotControlWidget(QGroupBox):
         gain = value / 10.0
         self.ui_service.signal_gain = gain
         self.gain_label.setText(f"{gain:.1f}x")
+
+    def on_offset_changed(self, value):
+        offset = value / 10.0
+        self.ui_service.signal_offset = offset
+        self.offset_label.setText(f"{offset:.1f}V")
 
     def on_time_axis_changed(self, state):
         self.ui_service.plot_time_axis = (state == Qt.CheckState.Checked)
@@ -1028,8 +1051,8 @@ class RPeakDetectionWidget(QGroupBox):
         super().__init__("R-Peak Detection")
         self.signal_processing_service = signal_processing_service
         # Store current displayed values (preview mode)
-        self.displayed_enabled = self.signal_processing_service.r_peak_enabled
-        self.displayed_threshold = self.signal_processing_service.r_peak_threshold
+        self.displayed_enabled = True  # Default enabled
+        self.displayed_threshold = 0.2  # Default threshold
         self.init_ui()
 
     def init_ui(self):
@@ -1113,10 +1136,10 @@ class RPeakDetectionWidget(QGroupBox):
             self.status_label.setText("")
 
     def on_reset_clicked(self):
-        self.displayed_enabled = False  # Default disabled
-        self.displayed_threshold = 0.1
+        self.displayed_enabled = True  # Default enabled
+        self.displayed_threshold = 0.2
         self.enable_checkbox.setChecked(self.displayed_enabled)
-        self.threshold_label.setText("0.1")
+        self.threshold_label.setText("0.2")
         self.clear_status()
 
     def clear_status(self):
