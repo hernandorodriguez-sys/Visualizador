@@ -201,9 +201,8 @@ class UIService(QObject):
         self._process_incoming_data()
 
         # Update plot
-        if hasattr(self.window, 'line_raw') and hasattr(self.window, 'status_text') and hasattr(self.window, 'ax'):
-            update_plot(self, self.window.line_raw, self.window.status_text, self.window.ax)
-            self.window.canvas.draw()
+        if hasattr(self.window, 'line_raw') and hasattr(self.window, 'status_text') and hasattr(self.window, 'plot_widget'):
+            update_plot(self, self.window.plot_widget, self.window.line_raw, self.window.status_text)
 
         # Update status widgets
         current_lead = get_current_lead(self.current_lead_index)
