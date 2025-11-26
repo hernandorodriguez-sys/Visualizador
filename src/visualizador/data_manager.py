@@ -1,6 +1,5 @@
 import threading
 from collections import deque
-from .filters import BaselineEMA
 from .data_recorder import DataRecorder
 from .config import buffer_size
 
@@ -9,9 +8,6 @@ class DataManager:
         # Thread-safe variables
         self.data_lock = threading.Lock()
         self.voltage_buffer = deque(maxlen=buffer_size)
-        self.filtered_buffer = deque(maxlen=buffer_size)
-        self.antialiased_buffer = deque(maxlen=buffer_size)
-        self.baseline_buffer = deque(maxlen=buffer_size)
         self.time_buffer = deque(maxlen=buffer_size)
         self.sample_count = 0
         self.esp32_connected = False
@@ -42,9 +38,6 @@ class DataManager:
         # Control manual
         self.force_charge = False
         self.force_discharge = False
-
-        # Filter
-        self.baseline_filter = BaselineEMA(alpha=0.995)
 
         # Plot settings
         self.plot_y_min = -0.5
