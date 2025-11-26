@@ -31,7 +31,7 @@ def main():
     ui_service = UIService()
 
     # Connect services
-    adc_service.set_services(None, ui_service)
+    adc_service.set_services(ui_service)
 
     # Start services
     adc_service.start()

@@ -1,8 +1,11 @@
 import serial
 import time
+import threading
+import queue
 from .config import DEBUG_MODE, BAUD_RATE, SAMPLE_RATE, POST_R_DELAY_SAMPLES, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE
 import numpy as np
 from scipy import signal
+from .data_types import ADCData
 
 class SerialReaderESP32:
     def __init__(self, port, baud_rate, max_connection_attempts=5):
@@ -16,6 +19,11 @@ class SerialReaderESP32:
         self.valid_packets = 0
         self.invalid_packets = 0
         self.sync_buffer = []
+
+        # Processing thread components
+        self.processing_queue = queue.Queue(maxsize=10000)
+        self.processing_thread = None
+        self.signal_processing_service = None
 
     def connect(self):
         if self.connection_attempts >= self.max_connection_attempts:
@@ -74,6 +82,36 @@ class SerialReaderESP32:
 
         self.valid_packets += 1
         return voltage
+
+    def set_signal_processing_service(self, service):
+        """Set the signal processing service for the processing thread"""
+        self.signal_processing_service = service
+
+    def _processing_worker(self):
+        """Processing thread that sends decoded data to filter functions"""
+        while self.running:
+            try:
+                # Get decoded data from processing queue
+                voltage, metadata = self.processing_queue.get(timeout=0.1)
+
+                # Send to signal processing service (filter functions)
+                if self.signal_processing_service:
+                    adc_data = ADCData(
+                        timestamp=int(time.time() * 1000),
+                        voltage=voltage,
+                        source='esp32',
+                        metadata=metadata or {}
+                    )
+                    self.signal_processing_service.process_data(adc_data)
+
+                self.processing_queue.task_done()
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"[ESP32] Processing thread error: {e}")
+                time.sleep(0.01)
 
     def read_data(self, adc_service):
         """Lee datos ECG usando sincronización robusta"""
@@ -140,8 +178,19 @@ class SerialReaderESP32:
                             voltage = self.decode_packet(packet)
 
                             if voltage is not None:
-                                # Send raw voltage data to ADC service
+                                # Send raw voltage data to ADC service (for UI consumption)
                                 adc_service.on_esp32_data(voltage)
+
+                                # Put decoded data in processing queue for filter functions
+                                try:
+                                    self.processing_queue.put_nowait((voltage, None))
+                                except queue.Full:
+                                    # Remove oldest if full
+                                    try:
+                                        self.processing_queue.get_nowait()
+                                        self.processing_queue.put_nowait((voltage, None))
+                                    except queue.Empty:
+                                        pass
 
                             self.sync_buffer = self.sync_buffer[4:]
                         else:
@@ -161,6 +210,10 @@ class SerialReaderESP32:
         import threading
         self.thread = threading.Thread(target=self.read_data, args=(adc_service,), daemon=True)
         self.thread.start()
+
+        # Start processing thread
+        self.processing_thread = threading.Thread(target=self._processing_worker, daemon=True)
+        self.processing_thread.start()
 
     def stop(self):
         self.running = False

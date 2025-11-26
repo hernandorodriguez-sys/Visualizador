@@ -3,14 +3,10 @@ import queue
 import time
 from typing import NamedTuple, Optional
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
+from .signal_processing_service import SignalProcessingService
+from .data_types import ADCData
 from .config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
 
-class ADCData(NamedTuple):
-    """Data structure for ADC readings"""
-    timestamp: int
-    voltage: float
-    source: str  # 'esp32' or 'arduino'
-    metadata: dict = None  # Additional data like lead changes, energies, etc.
 
 class ADCService:
     """Service responsible for ADC data acquisition from ESP32 and Arduino"""
@@ -34,17 +30,22 @@ class ADCService:
         self.esp32_reader = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE, self.max_connection_attempts)
         self.arduino_reader = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE, self.max_connection_attempts)
 
+        # Signal processing service
+        self.signal_processing_service = SignalProcessingService()
+
         # Status
         self.esp32_connected = False
         self.arduino_connected = False
 
         print("ADC Data Acquisition Service initialized")
 
-    def set_services(self, signal_processing_service, ui_service):
+    def set_services(self, ui_service):
         """Set references to other services for communication"""
-        self.signal_processing_service = signal_processing_service
         self.ui_service = ui_service
         self.sample_count = 0
+
+        # Set UI service on signal processing service
+        self.signal_processing_service.set_ui_service(ui_service)
 
     def start(self):
         """Start the ADC service"""
@@ -52,6 +53,9 @@ class ADCService:
             self.running = True
             self.thread = threading.Thread(target=self._run, daemon=True)
             self.thread.start()
+
+            # Start signal processing service
+            self.signal_processing_service.start()
 
             # Try to start serial readers with limited attempts
             self._start_serial_readers()
@@ -63,6 +67,7 @@ class ADCService:
         # Try ESP32 connection
         try:
             print("Starting ESP32 reader...")
+            self.esp32_reader.set_signal_processing_service(self.signal_processing_service)
             self.esp32_reader.start(self)
             print("ESP32 reader started")
         except Exception as e:
@@ -84,6 +89,7 @@ class ADCService:
         if self.thread:
             self.thread.join(timeout=1.0)
 
+        self.signal_processing_service.stop()
         self.esp32_reader.stop()
         self.arduino_reader.stop()
         print("ADC Data Acquisition Service stopped")
