@@ -37,15 +37,31 @@ class SignalProcessingService:
 
         # Filter parameters
         self.nyquist = SAMPLE_RATE / 2
-        # ECG bandpass filter: 0.5 - 40 Hz
-        self.low_cutoff = 0.5
-        self.high_cutoff = 40.0
+        # Configurable bandpass filter: default 0.05 - 50 Hz
+        self.low_cutoff = 0.05
+        self.high_cutoff = 50.0
 
         # Design FIR bandpass filter for stability
         self.fir_coeffs = signal.firwin(101, [self.low_cutoff/self.nyquist, self.high_cutoff/self.nyquist], pass_zero=False)
         self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
 
         print("Signal Processing Service initialized")
+
+    def update_filter_parameters(self, low_cutoff: float, high_cutoff: float):
+        """Update the bandpass filter parameters and redesign the filter"""
+        if low_cutoff >= high_cutoff or low_cutoff < 0.05 or high_cutoff > 120.0 or high_cutoff >= self.nyquist:
+            print(f"Invalid filter parameters: low={low_cutoff}, high={high_cutoff}")
+            return False
+
+        self.low_cutoff = low_cutoff
+        self.high_cutoff = high_cutoff
+
+        # Redesign FIR bandpass filter
+        self.fir_coeffs = signal.firwin(101, [self.low_cutoff/self.nyquist, self.high_cutoff/self.nyquist], pass_zero=False)
+        self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
+
+        print(f"Filter updated: {self.low_cutoff:.3f} - {self.high_cutoff:.3f} Hz")
+        return True
 
     def set_ui_service(self, ui_service):
         """Set the UI service to send processed data to"""

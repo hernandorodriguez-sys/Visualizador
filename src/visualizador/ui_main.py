@@ -250,11 +250,12 @@ class DataRecorderControlWidget(QGroupBox):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, ui_service, serial_reader_esp32, serial_reader_arduino):
+    def __init__(self, ui_service, adc_service):
         super().__init__()
         self.ui_service = ui_service
-        self.serial_reader_esp32 = serial_reader_esp32
-        self.serial_reader_arduino = serial_reader_arduino
+        self.adc_service = adc_service
+        self.serial_reader_esp32 = adc_service.esp32_reader
+        self.serial_reader_arduino = adc_service.arduino_reader
 
         self.setWindowTitle("Monitor ECG - ADC Raw")
         self.setGeometry(100, 100, 1200, 800)
@@ -286,6 +287,8 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.data_recorder_control)
         self.plot_control = PlotControlWidget(self.ui_service)
         status_layout.addWidget(self.plot_control)
+        self.bandpass_filter_control = BandPassFilterWidget(self.adc_service.signal_processing_service)
+        status_layout.addWidget(self.bandpass_filter_control)
         layout.addLayout(status_layout)
 
         # UI updates are now handled by the UI service
@@ -370,6 +373,122 @@ class PlotControlWidget(QGroupBox):
 
     def on_time_axis_changed(self, state):
         self.ui_service.plot_time_axis = (state == Qt.CheckState.Checked)
+
+
+class BandPassFilterWidget(QGroupBox):
+    def __init__(self, signal_processing_service):
+        super().__init__("Band Pass Filter")
+        self.signal_processing_service = signal_processing_service
+        # Store current displayed values (preview mode)
+        self.displayed_low_cutoff = self.signal_processing_service.low_cutoff
+        self.displayed_high_cutoff = self.signal_processing_service.high_cutoff
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QGridLayout()
+
+        # High-pass frequency controls
+        layout.addWidget(QLabel("High-Pass (Hz):"), 0, 0)
+        self.low_cutoff_label = QLabel(f"{self.displayed_low_cutoff:.2f}")
+        layout.addWidget(self.low_cutoff_label, 0, 1)
+
+        low_btn_layout = QHBoxLayout()
+        self.low_minus_btn = QPushButton("-")
+        self.low_minus_btn.clicked.connect(self.on_low_minus_clicked)
+        low_btn_layout.addWidget(self.low_minus_btn)
+
+        self.low_plus_btn = QPushButton("+")
+        self.low_plus_btn.clicked.connect(self.on_low_plus_clicked)
+        low_btn_layout.addWidget(self.low_plus_btn)
+
+        layout.addLayout(low_btn_layout, 0, 2)
+
+        # Low-pass frequency controls
+        layout.addWidget(QLabel("Low-Pass (Hz):"), 1, 0)
+        self.high_cutoff_label = QLabel(f"{self.displayed_high_cutoff:.1f}")
+        layout.addWidget(self.high_cutoff_label, 1, 1)
+
+        high_btn_layout = QHBoxLayout()
+        self.high_minus_btn = QPushButton("-")
+        self.high_minus_btn.clicked.connect(self.on_high_minus_clicked)
+        high_btn_layout.addWidget(self.high_minus_btn)
+
+        self.high_plus_btn = QPushButton("+")
+        self.high_plus_btn.clicked.connect(self.on_high_plus_clicked)
+        high_btn_layout.addWidget(self.high_plus_btn)
+
+        layout.addLayout(high_btn_layout, 1, 2)
+
+        # Set and Reset buttons
+        button_layout = QHBoxLayout()
+        self.reset_button = QPushButton("Reset to Default")
+        self.reset_button.clicked.connect(self.on_reset_clicked)
+        button_layout.addWidget(self.reset_button)
+
+        self.set_button = QPushButton("Set")
+        self.set_button.clicked.connect(self.on_set_clicked)
+        button_layout.addWidget(self.set_button)
+
+        layout.addLayout(button_layout, 2, 0, 1, 3)
+
+        # Status label
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        layout.addWidget(self.status_label, 3, 0, 1, 3)
+
+        self.setLayout(layout)
+
+    def on_low_minus_clicked(self):
+        self.displayed_low_cutoff = max(0.05, self.displayed_low_cutoff - 0.05)
+        self.low_cutoff_label.setText(f"{self.displayed_low_cutoff:.2f}")
+        self.clear_status()
+
+    def on_low_plus_clicked(self):
+        self.displayed_low_cutoff += 0.05
+        self.low_cutoff_label.setText(f"{self.displayed_low_cutoff:.2f}")
+        self.clear_status()
+
+    def on_high_minus_clicked(self):
+        self.displayed_high_cutoff = max(1.0, self.displayed_high_cutoff - 5.0)
+        self.high_cutoff_label.setText(f"{self.displayed_high_cutoff:.1f}")
+        self.clear_status()
+
+    def on_high_plus_clicked(self):
+        self.displayed_high_cutoff += 5.0
+        self.high_cutoff_label.setText(f"{self.displayed_high_cutoff:.1f}")
+        self.clear_status()
+
+    def on_set_clicked(self):
+        # Validate parameters
+        if self.displayed_low_cutoff >= self.displayed_high_cutoff:
+            QMessageBox.warning(self, "Invalid Filter Parameters",
+                              "High-pass frequency must be less than low-pass frequency.")
+            return
+
+        # Apply the filter parameters
+        success = self.signal_processing_service.update_filter_parameters(
+            self.displayed_low_cutoff, self.displayed_high_cutoff)
+
+        if success:
+            self.status_label.setText("Setted!")
+            # Update actual values to match displayed
+            self.signal_processing_service.low_cutoff = self.displayed_low_cutoff
+            self.signal_processing_service.high_cutoff = self.displayed_high_cutoff
+        else:
+            QMessageBox.warning(self, "Invalid Filter Parameters",
+                              "Filter parameters are out of valid range.")
+            self.status_label.setText("")
+
+    def on_reset_clicked(self):
+        self.displayed_low_cutoff = 0.05
+        self.displayed_high_cutoff = 50.0
+        self.low_cutoff_label.setText("0.05")
+        self.high_cutoff_label.setText("50.0")
+        self.clear_status()
+
+    def clear_status(self):
+        self.status_label.setText("")
+
 
     def closeEvent(self, event):
         self.timer.stop()

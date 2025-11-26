@@ -79,7 +79,7 @@ class UIService(QObject):
             from .ui_main import MainWindow
 
             # Create main window
-            self.window = MainWindow(self, adc_service.esp32_reader, adc_service.arduino_reader)
+            self.window = MainWindow(self, adc_service)
             self.window.show()
 
             # Start update timer
