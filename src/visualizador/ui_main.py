@@ -95,9 +95,10 @@ class CardioversorStatusWidget(QGroupBox):
 
 
 class CardioversorControlWidget(QGroupBox):
-    def __init__(self, serial_reader_arduino):
+    def __init__(self, serial_reader_arduino, plot_service_control=None):
         super().__init__("Cardioversor Control")
         self.serial_reader_arduino = serial_reader_arduino
+        self.plot_service_control = plot_service_control
         self.init_ui()
 
     def init_ui(self):
@@ -106,14 +107,28 @@ class CardioversorControlWidget(QGroupBox):
         self.armar_button = QPushButton("ARMAR")
         self.armar_button.setStyleSheet("background-color: red; color: white; font-weight: bold; padding: 10px;")
         self.armar_button.clicked.connect(self.on_armar_clicked)
+        self.armar_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.armar_button)
 
         self.desarmar_button = QPushButton("Desarmar")
         self.desarmar_button.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 10px;")
         self.desarmar_button.clicked.connect(self.on_desarmar_clicked)
+        self.desarmar_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.desarmar_button)
 
         self.setLayout(layout)
+
+        # Connect to service control status updates
+        if self.plot_service_control:
+            self.status_timer = QTimer()
+            self.status_timer.timeout.connect(self.update_button_status)
+            self.status_timer.start(1000)  # Check every second
+
+    def update_button_status(self):
+        """Update button enabled status based on service running state"""
+        enabled = self.plot_service_control.service_running
+        self.armar_button.setEnabled(enabled)
+        self.desarmar_button.setEnabled(enabled)
 
     def on_armar_clicked(self):
         reply = QMessageBox.question(
@@ -130,9 +145,10 @@ class CardioversorControlWidget(QGroupBox):
 
 
 class CardioversorFireControlWidget(QGroupBox):
-    def __init__(self, serial_reader_arduino):
+    def __init__(self, serial_reader_arduino, plot_service_control=None):
         super().__init__("Fire Control")
         self.serial_reader_arduino = serial_reader_arduino
+        self.plot_service_control = plot_service_control
         self.init_ui()
 
     def init_ui(self):
@@ -140,18 +156,34 @@ class CardioversorFireControlWidget(QGroupBox):
 
         self.auto_button = QPushButton("Auto")
         self.auto_button.clicked.connect(self.on_auto_clicked)
+        self.auto_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.auto_button)
 
         self.manual_button = QPushButton("Manual")
         self.manual_button.clicked.connect(self.on_manual_clicked)
+        self.manual_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.manual_button)
 
         self.test_fire_button = QPushButton("Test Fire")
         self.test_fire_button.setStyleSheet("background-color: orange; color: white; font-weight: bold;")
         self.test_fire_button.clicked.connect(self.on_test_fire_clicked)
+        self.test_fire_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.test_fire_button)
 
         self.setLayout(layout)
+
+        # Connect to service control status updates
+        if self.plot_service_control:
+            self.status_timer = QTimer()
+            self.status_timer.timeout.connect(self.update_button_status)
+            self.status_timer.start(1000)  # Check every second
+
+    def update_button_status(self):
+        """Update button enabled status based on service running state"""
+        enabled = self.plot_service_control.service_running
+        self.auto_button.setEnabled(enabled)
+        self.manual_button.setEnabled(enabled)
+        self.test_fire_button.setEnabled(enabled)
 
     def on_auto_clicked(self):
         self.serial_reader_arduino.send_command("AUTO")
@@ -171,10 +203,11 @@ class CardioversorFireControlWidget(QGroupBox):
 
 
 class LeadControlWidget(QGroupBox):
-    def __init__(self, ui_service, serial_reader_esp32):
+    def __init__(self, ui_service, serial_reader_esp32, plot_service_control):
         super().__init__("Control Derivada")
         self.ui_service = ui_service
         self.serial_reader_esp32 = serial_reader_esp32
+        self.plot_service_control = plot_service_control
         self.init_ui()
 
     def init_ui(self):
@@ -182,21 +215,40 @@ class LeadControlWidget(QGroupBox):
 
         self.btn_di = QPushButton('DI')
         self.btn_di.clicked.connect(lambda: self.on_lead_button('DI'))
+        self.btn_di.setEnabled(False)  # Initially disabled
         layout.addWidget(self.btn_di)
 
         self.btn_dii = QPushButton('DII')
         self.btn_dii.clicked.connect(lambda: self.on_lead_button('DII'))
+        self.btn_dii.setEnabled(False)  # Initially disabled
         layout.addWidget(self.btn_dii)
 
         self.btn_diii = QPushButton('DIII')
         self.btn_diii.clicked.connect(lambda: self.on_lead_button('DIII'))
+        self.btn_diii.setEnabled(False)  # Initially disabled
         layout.addWidget(self.btn_diii)
 
         self.btn_avr = QPushButton('aVR')
         self.btn_avr.clicked.connect(lambda: self.on_lead_button('aVR'))
+        self.btn_avr.setEnabled(False)  # Initially disabled
         layout.addWidget(self.btn_avr)
 
         self.setLayout(layout)
+
+        # Connect to service control status updates
+        if self.plot_service_control:
+            # We'll check status periodically
+            self.status_timer = QTimer()
+            self.status_timer.timeout.connect(self.update_button_status)
+            self.status_timer.start(1000)  # Check every second
+
+    def update_button_status(self):
+        """Update button enabled status based on service running state"""
+        enabled = self.plot_service_control.service_running
+        self.btn_di.setEnabled(enabled)
+        self.btn_dii.setEnabled(enabled)
+        self.btn_diii.setEnabled(enabled)
+        self.btn_avr.setEnabled(enabled)
 
     def on_lead_button(self, lead):
         if lead == 'DI':
@@ -533,13 +585,15 @@ class MainWindow(QMainWindow):
         # Main vertical layout
         main_layout = QVBoxLayout(central_widget)
 
-        # Top container: Device status, Lead control, Data recorder
+        # Top container: Service control, Device status, Lead control, Data recorder
         top_container = QWidget()
         top_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         top_layout = QHBoxLayout(top_container)
+        self.plot_service_control = PlotServiceControlWidget(self.ui_service, self.adc_service)
+        top_layout.addWidget(self.plot_service_control)
         self.device_status = DeviceStatusWidget()
         top_layout.addWidget(self.device_status)
-        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
+        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32, self.plot_service_control)
         top_layout.addWidget(self.lead_control)
         self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
         top_layout.addWidget(self.data_recorder_control)
@@ -571,9 +625,9 @@ class MainWindow(QMainWindow):
 
         # Cardioversor controls
         cardio_layout = QHBoxLayout()
-        self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino)
+        self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino, self.plot_service_control)
         cardio_layout.addWidget(self.cardioversor_control)
-        self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino)
+        self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino, self.plot_service_control)
         cardio_layout.addWidget(self.fire_control)
         controls_layout.addLayout(cardio_layout)
 
@@ -587,6 +641,120 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(bottom_container, stretch=1)
 
         # UI updates are now handled by the UI service
+
+
+class PlotServiceControlWidget(QGroupBox):
+    def __init__(self, ui_service, adc_service):
+        super().__init__("Plot Service Control")
+        self.ui_service = ui_service
+        self.adc_service = adc_service
+        self.service_running = False
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Status label
+        self.status_label = QLabel("Service: STOPPED")
+        self.status_label.setStyleSheet("font-weight: bold; color: red; font-size: 12px;")
+        layout.addWidget(self.status_label)
+
+        # Control buttons
+        button_layout = QHBoxLayout()
+
+        self.start_button = QPushButton("Start Service")
+        self.start_button.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 8px;")
+        self.start_button.clicked.connect(self.on_start_clicked)
+        button_layout.addWidget(self.start_button)
+
+        self.stop_button = QPushButton("Stop Service")
+        self.stop_button.setStyleSheet("background-color: red; color: white; font-weight: bold; padding: 8px;")
+        self.stop_button.clicked.connect(self.on_stop_clicked)
+        self.stop_button.setEnabled(False)
+        button_layout.addWidget(self.stop_button)
+
+        layout.addLayout(button_layout)
+
+        # Connection status
+        status_layout = QGridLayout()
+        status_layout.addWidget(QLabel("ESP32:"), 0, 0)
+        self.esp32_status = QLabel("Not Connected")
+        self.esp32_status.setStyleSheet("color: red; font-weight: bold;")
+        status_layout.addWidget(self.esp32_status, 0, 1)
+
+        status_layout.addWidget(QLabel("Arduino:"), 1, 0)
+        self.arduino_status = QLabel("Not Connected")
+        self.arduino_status.setStyleSheet("color: red; font-weight: bold;")
+        status_layout.addWidget(self.arduino_status, 1, 1)
+
+        layout.addLayout(status_layout)
+
+        self.setLayout(layout)
+
+        # Start status update timer
+        self.status_timer = QTimer()
+        self.status_timer.timeout.connect(self.update_status)
+        self.status_timer.start(1000)  # Update every second
+
+    def on_start_clicked(self):
+        if not self.service_running:
+            try:
+                # Start ADC service (this will attempt connections)
+                self.adc_service.start()
+                self.service_running = True
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
+                self.status_label.setText("Service: STARTING...")
+                self.status_label.setStyleSheet("font-weight: bold; color: orange; font-size: 12px;")
+                print("Plot service started by user")
+            except Exception as e:
+                print(f"Failed to start plot service: {e}")
+                QMessageBox.warning(self, "Error", f"Failed to start service: {str(e)}")
+
+    def on_stop_clicked(self):
+        if self.service_running:
+            try:
+                self.adc_service.stop()
+                self.service_running = False
+                self.start_button.setEnabled(True)
+                self.stop_button.setEnabled(False)
+                self.status_label.setText("Service: STOPPED")
+                self.status_label.setStyleSheet("font-weight: bold; color: red; font-size: 12px;")
+                self.esp32_status.setText("Not Connected")
+                self.esp32_status.setStyleSheet("color: red; font-weight: bold;")
+                self.arduino_status.setText("Not Connected")
+                self.arduino_status.setStyleSheet("color: red; font-weight: bold;")
+                print("Plot service stopped by user")
+            except Exception as e:
+                print(f"Failed to stop plot service: {e}")
+
+    def update_status(self):
+        if self.service_running:
+            # Update connection status
+            esp32_connected = self.adc_service.esp32_connected
+            arduino_connected = self.adc_service.arduino_connected
+
+            if esp32_connected:
+                self.esp32_status.setText("Connected")
+                self.esp32_status.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                self.esp32_status.setText("Not Connected")
+                self.esp32_status.setStyleSheet("color: red; font-weight: bold;")
+
+            if arduino_connected:
+                self.arduino_status.setText("Connected")
+                self.arduino_status.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                self.arduino_status.setText("Not Connected")
+                self.arduino_status.setStyleSheet("color: red; font-weight: bold;")
+
+            # Update service status
+            if esp32_connected or arduino_connected:
+                self.status_label.setText("Service: RUNNING")
+                self.status_label.setStyleSheet("font-weight: bold; color: green; font-size: 12px;")
+            else:
+                self.status_label.setText("Service: CONNECTING...")
+                self.status_label.setStyleSheet("font-weight: bold; color: orange; font-size: 12px;")
 
 
 class PlotControlWidget(QGroupBox):

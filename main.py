@@ -33,32 +33,36 @@ def main():
     # Connect services
     adc_service.set_services(ui_service)
 
-    # Start services
-    adc_service.start()
+    # Start UI service only (ADC service will be started by user via UI)
     ui_service.start(adc_service)
 
     try:
         print("Iniciando servicios...\n")
 
         print("Servicios iniciados:")
-        print("   -> ADC Service: ESP32 y Arduino")
-        print("   -> UI Service: Interfaz gráfica\n")
+        print("   -> UI Service: Interfaz gráfica")
+        print("   -> ADC Service: Esperando inicio manual\n")
 
         def print_stats():
-            while adc_service.running:
+            while True:  # Always run, check if ADC service is running
                 time.sleep(10)
-                valid = adc_service.esp32_reader.valid_packets if hasattr(adc_service.esp32_reader, 'valid_packets') else 0
-                invalid = adc_service.esp32_reader.invalid_packets if hasattr(adc_service.esp32_reader, 'invalid_packets') else 0
-                if valid > 0:
-                    error_rate = (invalid / (valid + invalid)) * 100
-                    print(f"ESP32: {valid} paquetes validos, "
-                          f"{invalid} invalidos ({error_rate:.2f}% error)")
+                if adc_service.running:
+                    valid = adc_service.esp32_reader.valid_packets if hasattr(adc_service.esp32_reader, 'valid_packets') else 0
+                    invalid = adc_service.esp32_reader.invalid_packets if hasattr(adc_service.esp32_reader, 'invalid_packets') else 0
+                    if valid > 0:
+                        error_rate = (invalid / (valid + invalid)) * 100
+                        print(f"ESP32: {valid} paquetes validos, "
+                              f"{invalid} invalidos ({error_rate:.2f}% error)")
+                else:
+                    # ADC service not running, just wait
+                    pass
 
         stats_thread = threading.Thread(target=print_stats, daemon=True)
         stats_thread.start()
 
         print("Abriendo ventana de visualizacion...\n")
         print("INSTRUCCIONES:")
+        print("   • Usar 'Start Service' para conectar ESP32 y Arduino")
         print("   • Usar botones para cambiar derivaciones manualmente\n")
 
         # Run the UI service (blocking)
