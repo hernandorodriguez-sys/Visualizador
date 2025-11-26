@@ -90,7 +90,7 @@ class UIService(QObject):
             # Start update timer
             self.timer = QTimer()
             self.timer.timeout.connect(self._update_ui)
-            self.timer.start(20)  # Update every 20ms for better real-time performance
+            self.timer.start(10)  # Update every 10ms for better real-time performance
 
             print("UI Service started")
 
@@ -154,7 +154,7 @@ class UIService(QObject):
         self.esp32_connected = esp32_connected
         self.arduino_connected = arduino_connected
 
-    def _process_incoming_data(self, max_items_per_update=1000):
+    def _process_incoming_data(self, max_items_per_update=2000):
         """Process incoming data from queues (limited per update cycle for responsiveness)"""
         items_processed = 0
 

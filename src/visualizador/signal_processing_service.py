@@ -155,9 +155,9 @@ class SignalProcessingService:
                 # Add to signal buffer for peak detection
                 self.signal_buffer.append(filtered_voltage)
 
-                # Periodically reset filter state to prevent drift
-                if self.sample_count % 10000 == 0:  # Reset every 10000 samples
-                    self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
+                # Periodically reset filter state to prevent drift (disabled to avoid glitches)
+                # if self.sample_count % 10000 == 0:  # Reset every 10000 samples
+                #     self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
 
                 # Detect peaks periodically (every 500 samples to avoid overhead)
                 peaks = []

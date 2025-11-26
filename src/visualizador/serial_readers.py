@@ -188,8 +188,16 @@ class SerialReaderESP32:
                                 adc_service.on_esp32_data(voltage)
 
                                 # Put decoded data in processing queue for filter functions
-                                # Block if full to avoid data loss
-                                self.processing_queue.put((voltage, None))
+                                # Non-blocking: drop oldest if full to keep latest data
+                                try:
+                                    self.processing_queue.put_nowait((voltage, None))
+                                except queue.Full:
+                                    # Drop oldest to make room for new
+                                    try:
+                                        self.processing_queue.get_nowait()
+                                        self.processing_queue.put_nowait((voltage, None))
+                                    except queue.Empty:
+                                        pass
 
                             self.sync_buffer = self.sync_buffer[4:]
                         else:
