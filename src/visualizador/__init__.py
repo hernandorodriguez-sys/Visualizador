@@ -9,19 +9,15 @@ __version__ = "0.1.0"
 
 from .config import *
 from .data_manager import DataManager
-from .filters import BaselineEMA
 from .plot_utils import setup_plot, update_plot
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
-from .utils import detect_r_peaks_improved
 from .data_recorder import DataRecorder
 
 __all__ = [
     "DataManager",
-    "BaselineEMA",
     "setup_plot",
     "update_plot",
     "SerialReaderESP32",
     "SerialReaderArduino",
     "DataRecorder",
-    "detect_r_peaks_improved",
 ]

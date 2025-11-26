@@ -44,6 +44,7 @@ class ADCService:
         """Set references to other services for communication"""
         self.signal_processing_service = signal_processing_service
         self.ui_service = ui_service
+        self.sample_count = 0
 
     def start(self):
         """Start the ADC service"""
@@ -137,11 +138,22 @@ class ADCService:
             metadata=metadata or {}
         )
 
-        # Send to signal processing service
+        # Send to signal processing service if available, otherwise send directly to UI
         if self.signal_processing_service:
             self.signal_processing_service.process_data(data)
+        elif self.ui_service:
+            # Create processed data directly
+            from .ui_service import ProcessedData
+            processed = ProcessedData(
+                timestamp=data.timestamp,
+                raw_voltage=data.voltage,
+                sample_count=self.sample_count,
+                metadata=data.metadata
+            )
+            self.ui_service.add_processed_data(processed)
+            self.sample_count += 1
 
-        # Send to UI service
+        # Send to UI service for metadata
         if self.ui_service:
             self.ui_service.add_adc_data(data)
 

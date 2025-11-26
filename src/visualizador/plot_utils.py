@@ -1,7 +1,6 @@
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore
 from .config import SAMPLE_RATE
-from .utils import get_current_lead
 
 def on_lead_di_button(event, ui_service, serial_reader_esp32):
     """Cambiar a derivación DI"""

@@ -1,15 +1,22 @@
 import threading
 import queue
 import time
-from typing import Optional
+from typing import Optional, NamedTuple
 from collections import deque
 from PyQt6.QtWidgets import QApplication, QMainWindow
 from PyQt6.QtCore import QTimer, pyqtSlot, QObject
 
 # Import MainWindow inside the method to avoid circular import
 from .plot_utils import setup_plot, update_plot
-from .utils import get_current_lead
 from .data_recorder import DataRecorder
+from .utils import get_current_lead
+
+class ProcessedData(NamedTuple):
+    """Data structure for processed signal data"""
+    timestamp: int
+    raw_voltage: float
+    sample_count: int
+    metadata: dict = None
 
 class UIService(QObject):
     """Service responsible for UI updates and plot management"""
@@ -30,9 +37,6 @@ class UIService(QObject):
 
         # Data buffers (similar to DataManager but simplified)
         self.voltage_buffer = deque(maxlen=10000)
-        self.filtered_buffer = deque(maxlen=10000)
-        self.baseline_buffer = deque(maxlen=10000)
-        self.antialiased_buffer = deque(maxlen=10000)
         self.time_buffer = deque(maxlen=10000)
         self.sample_count = 0
 
@@ -139,9 +143,6 @@ class UIService(QObject):
 
                 # Store in buffers
                 self.voltage_buffer.append(voltage_with_gain)
-                self.filtered_buffer.append(processed_data.filtered_voltage)
-                self.baseline_buffer.append(processed_data.baseline)
-                self.antialiased_buffer.append(processed_data.antialiased_voltage)
                 self.time_buffer.append(processed_data.sample_count)
                 self.sample_count = processed_data.sample_count
 
