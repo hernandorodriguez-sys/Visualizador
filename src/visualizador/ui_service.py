@@ -39,6 +39,7 @@ class UIService(QObject):
         self.voltage_buffer = deque(maxlen=10000)
         self.time_buffer = deque(maxlen=10000)
         self.sample_count = 0
+        self.ecg_record_counter = 0
 
         # Status data
         self.esp32_connected = False
@@ -68,9 +69,6 @@ class UIService(QObject):
         """Start the UI service"""
         if not self.running:
             self.running = True
-
-            # Start data recorder
-            self.data_recorder.start_recording()
 
             # Initialize PyQt application
             self.app = QApplication([])
@@ -146,6 +144,11 @@ class UIService(QObject):
                 self.time_buffer.append(processed_data.sample_count)
                 self.sample_count = processed_data.sample_count
 
+                # Record ECG data at reduced rate (every 10 samples ~100 Hz)
+                self.ecg_record_counter += 1
+                if self.ecg_record_counter % 10 == 0:
+                    self.data_recorder.write_row(processed_data.timestamp / 1000.0, voltage_with_gain)
+
                 self.processed_data_queue.task_done()
                 items_processed += 1
 
@@ -181,7 +184,8 @@ class UIService(QObject):
 
                     # Record to CSV
                     self.data_recorder.write_row(
-                        energia['timestamp'] if 'timestamp' in energia else adc_data.timestamp,
+                        (energia['timestamp'] if 'timestamp' in energia else adc_data.timestamp) / 1000.0,
+                        None,  # ecg_voltage
                         energia['vcap'], energia['corriente'],
                         energia['e_f1'], energia['e_f2'], energia['e_total'], estado
                     )

@@ -225,8 +225,8 @@ class DataRecorderControlWidget(QGroupBox):
         self.stop_button.clicked.connect(self.on_stop_clicked)
         layout.addWidget(self.stop_button)
 
-        self.status_label = QLabel("Recording: ON")
-        self.status_label.setStyleSheet("font-weight: bold; color: green;")
+        self.status_label = QLabel("Recording: OFF")
+        self.status_label.setStyleSheet("font-weight: bold; color: red;")
         layout.addWidget(self.status_label)
 
         self.setLayout(layout)
