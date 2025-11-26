@@ -1,11 +1,17 @@
 import threading
 import queue
 import time
+import logging
+from collections import deque
 import numpy as np
 from scipy import signal
 from typing import NamedTuple, Optional
 from .config import SAMPLE_RATE, MIN_PEAK_HEIGHT, MIN_PEAK_DISTANCE, PEAK_WIDTH_MIN, PEAK_PROMINENCE
 from .data_types import ADCData
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class ProcessedData(NamedTuple):
     """Data structure for processed signal data"""
@@ -24,16 +30,17 @@ class SignalProcessingService:
         self.thread = None
 
         # Communication queues
-        self.input_queue = queue.Queue(maxsize=10000)  # Raw ADC data input
-        self.output_queue = queue.Queue(maxsize=10000)  # Processed data output
+        self.input_queue = queue.Queue(maxsize=15000)  # Raw ADC data input
+        self.output_queue = queue.Queue(maxsize=15000)  # Processed data output
 
         # Service references
         self.ui_service = None
 
         # Processing buffers
-        self.signal_buffer = []
+        self.signal_buffer = deque(maxlen=1000)  # Keep last 1000 samples for peak detection
         self.buffer_size = 1000  # Size for filtering window
         self.sample_count = 0
+        self.last_log_time = time.time()
 
         # Filter parameters
         self.nyquist = SAMPLE_RATE / 2
@@ -80,14 +87,21 @@ class SignalProcessingService:
         self.running = False
         if self.thread:
             self.thread.join(timeout=1.0)
+        # Clean queues and buffers
+        self.input_queue = queue.Queue(maxsize=15000)
+        self.output_queue = queue.Queue(maxsize=15000)
+        self.signal_buffer.clear()
+        self.sample_count = 0
+        self.last_log_time = time.time()
         print("Signal Processing Service stopped")
 
     def process_data(self, adc_data: ADCData):
         """Add raw ADC data for processing"""
+        # Non-blocking: drop oldest if full to keep latest data
         try:
             self.input_queue.put_nowait(adc_data)
         except queue.Full:
-            # Remove oldest data if queue is full
+            # Drop oldest to make room for new
             try:
                 self.input_queue.get_nowait()
                 self.input_queue.put_nowait(adc_data)
@@ -109,13 +123,13 @@ class SignalProcessingService:
         clamped = max(-5.0, min(5.0, filtered[0]))
         return clamped
 
-    def _detect_peaks(self, filtered_signal: list) -> list:
+    def _detect_peaks(self, filtered_signal) -> list:
         """Detect peaks in the filtered signal"""
         if len(filtered_signal) < MIN_PEAK_DISTANCE:
             return []
 
         # Convert to numpy array
-        signal_array = np.array(filtered_signal)
+        signal_array = np.array(list(filtered_signal))
 
         # Find peaks
         peaks, _ = signal.find_peaks(
@@ -138,14 +152,17 @@ class SignalProcessingService:
                 # Apply filtering
                 filtered_voltage = self._apply_filter(adc_data.voltage)
 
+                # Add to signal buffer for peak detection
+                self.signal_buffer.append(filtered_voltage)
+
                 # Periodically reset filter state to prevent drift
                 if self.sample_count % 10000 == 0:  # Reset every 10000 samples
                     self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
 
-                # Detect peaks periodically (every 100 samples to avoid overhead)
+                # Detect peaks periodically (every 500 samples to avoid overhead)
                 peaks = []
-                if self.sample_count % 100 == 0 and len(self.signal_buffer) >= MIN_PEAK_DISTANCE:
-                    peaks = self._detect_peaks(self.signal_buffer[-200:])  # Check last 200 samples
+                if self.sample_count % 500 == 0 and len(self.signal_buffer) >= MIN_PEAK_DISTANCE:
+                    peaks = self._detect_peaks(list(self.signal_buffer)[-200:])  # Check last 200 samples
 
                 # Create processed data
                 processed = ProcessedData(
@@ -170,10 +187,10 @@ class SignalProcessingService:
                     self.ui_service.add_processed_data(ui_processed)
 
                 # Send to output queue (for external access if needed)
+                # Non-blocking: drop oldest if full
                 try:
                     self.output_queue.put_nowait(processed)
                 except queue.Full:
-                    # Remove oldest if full
                     try:
                         self.output_queue.get_nowait()
                         self.output_queue.put_nowait(processed)
@@ -183,8 +200,20 @@ class SignalProcessingService:
                 self.sample_count += 1
                 self.input_queue.task_done()
 
+                # Periodic logging every 10 seconds
+                current_time = time.time()
+                if current_time - self.last_log_time > 10:
+                    try:
+                        logger.info(f"Signal processing queues - Input: {self.input_queue.qsize()}, Output: {self.output_queue.qsize()}")
+                    except:
+                        pass
+                    self.last_log_time = current_time
+
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Signal processing error: {e}")
+                try:
+                    logger.error(f"Signal processing error: {e}", exc_info=True)
+                except:
+                    pass
                 time.sleep(0.01)

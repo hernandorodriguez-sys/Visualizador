@@ -1,6 +1,7 @@
 import threading
 import queue
 import time
+import logging
 from typing import Optional, NamedTuple
 from collections import deque
 from PyQt6.QtWidgets import QApplication, QMainWindow
@@ -10,6 +11,10 @@ from PyQt6.QtCore import QTimer, pyqtSlot, QObject
 from .plot_utils import setup_plot, update_plot
 from .data_recorder import DataRecorder
 from .utils import get_current_lead
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class ProcessedData(NamedTuple):
     """Data structure for processed signal data"""
@@ -27,8 +32,8 @@ class UIService(QObject):
         self.thread = None
 
         # Communication queues
-        self.processed_data_queue = queue.Queue(maxsize=10000)  # Processed signal data input
-        self.adc_data_queue = queue.Queue(maxsize=10000)  # ADC data input for metadata
+        self.processed_data_queue = queue.Queue(maxsize=15000)  # Processed signal data input
+        self.adc_data_queue = queue.Queue(maxsize=15000)  # ADC data input for metadata
 
         # UI components
         self.app = None
@@ -36,10 +41,11 @@ class UIService(QObject):
         self.timer = None
 
         # Data buffers (similar to DataManager but simplified)
-        self.voltage_buffer = deque(maxlen=10000)
-        self.time_buffer = deque(maxlen=10000)
+        self.voltage_buffer = deque(maxlen=15000)
+        self.time_buffer = deque(maxlen=15000)
         self.sample_count = 0
         self.ecg_record_counter = 0
+        self.last_log_time = time.time()
 
         # Status data
         self.esp32_connected = False
@@ -93,6 +99,22 @@ class UIService(QObject):
         self.running = False
         if self.timer:
             self.timer.stop()
+        # Clean queues and buffers
+        self.processed_data_queue = queue.Queue(maxsize=15000)
+        self.adc_data_queue = queue.Queue(maxsize=15000)
+        self.voltage_buffer.clear()
+        self.time_buffer.clear()
+        self.sample_count = 0
+        self.ecg_record_counter = 0
+        self.last_log_time = time.time()
+        self.discharge_events.clear()
+        self.last_discharge_time = 0
+        self.last_r_peak_time = 0
+        self.current_lead_index = 0
+        self.energia_carga_actual = 0.0
+        self.energia_fase1_actual = 0.0
+        self.energia_fase2_actual = 0.0
+        self.energia_total_ciclo = 0.0
         self.data_recorder.close()
         print("UI Service stopped")
 
@@ -103,9 +125,11 @@ class UIService(QObject):
 
     def add_processed_data(self, processed_data):
         """Add processed signal data to UI"""
+        # Non-blocking: drop oldest if full to keep latest data
         try:
             self.processed_data_queue.put_nowait(processed_data)
         except queue.Full:
+            # Drop oldest to make room for new
             try:
                 self.processed_data_queue.get_nowait()
                 self.processed_data_queue.put_nowait(processed_data)
@@ -114,9 +138,11 @@ class UIService(QObject):
 
     def add_adc_data(self, adc_data):
         """Add ADC data for metadata updates"""
+        # Non-blocking: drop oldest if full to keep latest data
         try:
             self.adc_data_queue.put_nowait(adc_data)
         except queue.Full:
+            # Drop oldest to make room for new
             try:
                 self.adc_data_queue.get_nowait()
                 self.adc_data_queue.put_nowait(adc_data)
@@ -128,7 +154,7 @@ class UIService(QObject):
         self.esp32_connected = esp32_connected
         self.arduino_connected = arduino_connected
 
-    def _process_incoming_data(self, max_items_per_update=500):
+    def _process_incoming_data(self, max_items_per_update=1000):
         """Process incoming data from queues (limited per update cycle for responsiveness)"""
         items_processed = 0
 
@@ -136,6 +162,23 @@ class UIService(QObject):
         try:
             while items_processed < max_items_per_update:
                 processed_data = self.processed_data_queue.get_nowait()
+
+                # Check for sample count gaps (indicating data loss)
+                if self.sample_count > 0 and processed_data.sample_count != self.sample_count + 1:
+                    gap = processed_data.sample_count - self.sample_count - 1
+                    try:
+                        logger.warning(f"Sample count gap detected: expected {self.sample_count + 1}, got {processed_data.sample_count}, gap of {gap} samples")
+                    except:
+                        pass
+
+                    # Interpolate missing samples
+                    if len(self.voltage_buffer) > 0:
+                        last_voltage = self.voltage_buffer[-1]
+                        current_voltage = processed_data.raw_voltage * self.signal_gain
+                        for i in range(1, gap + 1):
+                            interpolated_voltage = last_voltage + (current_voltage - last_voltage) * (i / (gap + 1))
+                            self.voltage_buffer.append(interpolated_voltage)
+                            self.time_buffer.append(self.sample_count + i)
 
                 # Apply gain to raw voltage
                 voltage_with_gain = processed_data.raw_voltage * self.signal_gain
@@ -205,6 +248,15 @@ class UIService(QObject):
 
         # Process incoming data
         self._process_incoming_data()
+
+        # Periodic logging every 10 seconds
+        current_time = time.time()
+        if current_time - self.last_log_time > 10:
+            try:
+                logger.info(f"UI queues - Processed data: {self.processed_data_queue.qsize()}, ADC data: {self.adc_data_queue.qsize()}")
+            except:
+                pass
+            self.last_log_time = current_time
 
         # Update plot
         if hasattr(self.window, 'line_raw') and hasattr(self.window, 'status_text') and hasattr(self.window, 'plot_widget'):

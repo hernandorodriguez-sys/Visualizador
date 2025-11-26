@@ -2,10 +2,15 @@ import serial
 import time
 import threading
 import queue
+import logging
 from .config import DEBUG_MODE, BAUD_RATE, SAMPLE_RATE, POST_R_DELAY_SAMPLES, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE
 import numpy as np
 from scipy import signal
 from .data_types import ADCData
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class SerialReaderESP32:
     def __init__(self, port, baud_rate, max_connection_attempts=5):
@@ -21,7 +26,7 @@ class SerialReaderESP32:
         self.sync_buffer = []
 
         # Processing thread components
-        self.processing_queue = queue.Queue(maxsize=10000)
+        self.processing_queue = queue.Queue(maxsize=15000)
         self.processing_thread = None
         self.signal_processing_service = None
 
@@ -116,6 +121,7 @@ class SerialReaderESP32:
     def read_data(self, adc_service):
         """Lee datos ECG usando sincronización robusta"""
         print("[ESP32] Iniciando lectura de datos ECG...")
+        last_log_time = time.time()
 
         while self.running:
             try:
@@ -182,15 +188,8 @@ class SerialReaderESP32:
                                 adc_service.on_esp32_data(voltage)
 
                                 # Put decoded data in processing queue for filter functions
-                                try:
-                                    self.processing_queue.put_nowait((voltage, None))
-                                except queue.Full:
-                                    # Remove oldest if full
-                                    try:
-                                        self.processing_queue.get_nowait()
-                                        self.processing_queue.put_nowait((voltage, None))
-                                    except queue.Empty:
-                                        pass
+                                # Block if full to avoid data loss
+                                self.processing_queue.put((voltage, None))
 
                             self.sync_buffer = self.sync_buffer[4:]
                         else:
@@ -198,6 +197,16 @@ class SerialReaderESP32:
 
                     if len(self.sync_buffer) > 100:
                         self.sync_buffer = self.sync_buffer[-50:]
+
+                    # Periodic logging every 10 seconds
+                    current_time = time.time()
+                    if current_time - last_log_time > 10:
+                        try:
+                            logger.info(f"ESP32 stats - Bytes received: {self.total_bytes_received}, Valid packets: {self.valid_packets}, Invalid packets: {self.invalid_packets}, Processing queue size: {self.processing_queue.qsize()}")
+                        except:
+                            pass
+                        last_log_time = current_time
+
                 time.sleep(0.0005)
 
             except Exception as e:
@@ -217,8 +226,18 @@ class SerialReaderESP32:
 
     def stop(self):
         self.running = False
+        if hasattr(self, 'processing_thread') and self.processing_thread.is_alive():
+            self.processing_thread.join(timeout=1.0)
+        if hasattr(self, 'thread') and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
         if self.ser:
             self.ser.close()
+        # Clean queue and reset counters
+        self.processing_queue = queue.Queue(maxsize=15000)
+        self.total_bytes_received = 0
+        self.valid_packets = 0
+        self.invalid_packets = 0
+        self.sync_buffer.clear()
 
 class SerialReaderArduino:
     def __init__(self, port, baud_rate, max_connection_attempts=5):

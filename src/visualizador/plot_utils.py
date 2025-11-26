@@ -95,6 +95,11 @@ def update_plot(ui_service, plot_widget, line_raw, status_text):
         y_raw_visible = y_raw
         x_visible = x_data
 
+    # Make x relative to start from 0 for real-time plotting
+    if len(x_visible) > 0:
+        x_offset = x_visible[0]
+        x_visible = [x - x_offset for x in x_visible]
+
     # Convert to time axis if enabled
     if time_axis:
         x_visible = [x / SAMPLE_RATE for x in x_visible]
