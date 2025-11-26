@@ -1,8 +1,5 @@
-import matplotlib
-matplotlib.use('QtAgg')  # Use PyQt6 backend
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtCore
 from .config import SAMPLE_RATE
 from .utils import get_current_lead
 
@@ -47,35 +44,39 @@ def on_discharge_button(event, data_manager):
     print("Comando de DESCARGA MANUAL activado")
 
 def setup_plot(ui_service):
-    """Configura la interfaz gráfica para ADC raw"""
-    plt.style.use('default')
-
-    fig = Figure(figsize=(10, 6))
-    fig.patch.set_facecolor('#FFE4E1')
-
-    ax = fig.add_subplot(111)
-    ax.set_facecolor('#FFE4E1')
-    ax.set_xlim(0, ui_service.plot_window_size)
-    ax.set_ylim(ui_service.plot_y_min, ui_service.plot_y_max)
-    ax.set_ylabel('Voltaje (V)', color='black', fontweight='bold')
+    """Configura la interfaz gráfica para ADC raw usando PyQtGraph"""
+    # Create PlotWidget
+    plot_widget = pg.PlotWidget()
+    plot_widget.setBackground('#FFE4E1')
+    plot_widget.setTitle('Monitor ECG - Señal ADC Raw (ESP32)', color='black', size='12pt')
+    plot_widget.setLabel('left', 'Voltaje (V)', color='black')
     xlabel = 'Tiempo (s)' if ui_service.plot_time_axis else 'Muestras'
-    ax.set_xlabel(xlabel, color='black', fontweight='bold')
-    ax.set_title('Monitor ECG - Señal ADC Raw (ESP32)', color='black', fontweight='bold', fontsize=12, pad=15)
-    ax.grid(True, color='gray', linestyle='-', linewidth=0.5, alpha=0.7)
-    ax.minorticks_on()
+    plot_widget.setLabel('bottom', xlabel, color='black')
 
-    line_raw, = ax.plot([], [], 'black', linewidth=1.2, alpha=0.95, label='ECG Raw')
-    ax.legend(loc='upper right', fontsize=8)
+    # Set initial ranges
+    plot_widget.setXRange(0, ui_service.plot_window_size)
+    plot_widget.setYRange(ui_service.plot_y_min, ui_service.plot_y_max)
 
-    status_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
-                           verticalalignment='top', fontsize=7, color='black',
-                           bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.9, edgecolor='gray'))
+    # Enable grid
+    plot_widget.showGrid(x=True, y=True, alpha=0.7)
 
-    canvas = FigureCanvas(fig)
-    return canvas, ax, line_raw, status_text
+    # Create plot item for ECG data
+    line_raw = plot_widget.plot([], [], pen=pg.mkPen('black', width=1.2, alpha=0.95), name='ECG Raw')
 
-def update_plot(ui_service, line_raw, status_text, ax):
-    """Actualiza la visualización del ADC raw"""
+    # Add legend
+    legend = pg.LegendItem((80, 60), offset=(70, 20))
+    legend.setParentItem(plot_widget.graphicsItem())
+    legend.addItem(line_raw, 'ECG Raw')
+
+    # Status text item
+    status_text = pg.TextItem('', anchor=(0, 1), color='black')
+    status_text.setPos(0.02, 0.98)
+    plot_widget.addItem(status_text)
+
+    return plot_widget, line_raw, status_text
+
+def update_plot(ui_service, plot_widget, line_raw, status_text):
+    """Actualiza la visualización del ADC raw usando PyQtGraph"""
     if len(ui_service.voltage_buffer) == 0:
         return
 
@@ -99,22 +100,24 @@ def update_plot(ui_service, line_raw, status_text, ax):
     if time_axis:
         x_visible = [x / SAMPLE_RATE for x in x_visible]
 
-    line_raw.set_data(x_visible, y_raw_visible)
+    # Update plot data
+    line_raw.setData(x_visible, y_raw_visible)
 
     # Update axis limits
-    ax.set_ylim(y_min, y_max)
+    plot_widget.setYRange(y_min, y_max)
     if len(x_visible) > 0:
         x_min = x_visible[0]
         x_max = x_visible[-1] if len(x_visible) > window_size else x_visible[0] + (window_size / SAMPLE_RATE if time_axis else window_size)
-        ax.set_xlim(x_min, x_max)
+        plot_widget.setXRange(x_min, x_max)
 
     # Update labels
-    ax.set_xlabel('Tiempo (s)' if time_axis else 'Muestras')
+    xlabel = 'Tiempo (s)' if time_axis else 'Muestras'
+    plot_widget.setLabel('bottom', xlabel, color='black')
 
     # Indicadores de conexión
     esp32_status = "ESP32 OK" if ui_service.esp32_connected else "ESP32 ERR"
     arduino_status = "ARD OK" if ui_service.arduino_connected else "ARD ERR"
 
-    status_text.set_text(
+    status_text.setText(
         f"{esp32_status} | {arduino_status} | Muestras: {len(y_raw)}"
     )

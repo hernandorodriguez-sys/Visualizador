@@ -267,9 +267,9 @@ class MainWindow(QMainWindow):
         # Layout
         layout = QVBoxLayout(central_widget)
 
-        # Matplotlib canvas
-        self.canvas, self.ax, self.line_raw, self.status_text = setup_plot(self.ui_service)
-        layout.addWidget(self.canvas)
+        # PyQtGraph plot widget
+        self.plot_widget, self.line_raw, self.status_text = setup_plot(self.ui_service)
+        layout.addWidget(self.plot_widget)
 
         # Status panels
         status_layout = QHBoxLayout()
