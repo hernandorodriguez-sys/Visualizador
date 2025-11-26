@@ -1,7 +1,7 @@
 import threading
 from collections import deque
 from .filters import BaselineEMA
-from .utils import write_csv_row
+from .data_recorder import DataRecorder
 from .config import buffer_size
 
 class DataManager:
@@ -10,6 +10,7 @@ class DataManager:
         self.data_lock = threading.Lock()
         self.voltage_buffer = deque(maxlen=buffer_size)
         self.filtered_buffer = deque(maxlen=buffer_size)
+        self.antialiased_buffer = deque(maxlen=buffer_size)
         self.baseline_buffer = deque(maxlen=buffer_size)
         self.time_buffer = deque(maxlen=buffer_size)
         self.sample_count = 0
@@ -35,10 +36,8 @@ class DataManager:
         self.energia_fase2_actual = 0.0
         self.energia_total_ciclo = 0.0
 
-        # CSV
-        self.csv_filename = None
-        self.csv_file = None
-        self.csv_writer = None
+        # Data Recorder
+        self.data_recorder = DataRecorder()
 
         # Control manual
         self.force_charge = False
@@ -47,5 +46,12 @@ class DataManager:
         # Filter
         self.baseline_filter = BaselineEMA(alpha=0.995)
 
+        # Plot settings
+        self.plot_y_min = -0.5
+        self.plot_y_max = 4.0  # Limited to 4V as requested
+        self.plot_window_size = 1500
+        self.plot_time_axis = False  # False = samples, True = time
+        self.signal_gain = 1.0  # Signal gain multiplier
+
     def write_csv_row(self, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
-        write_csv_row(self.csv_writer, self.csv_file, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
+        self.data_recorder.write_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)

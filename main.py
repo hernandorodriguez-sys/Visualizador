@@ -1,13 +1,12 @@
 import time
 import threading
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
+import sys
+from PyQt6.QtWidgets import QApplication
 
-from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE, refresh_interval
-from visualizador.data_manager import DataManager
-from visualizador.serial_readers import SerialReaderESP32, SerialReaderArduino
-from visualizador.plot_utils import setup_plot, update_plot
-from visualizador.utils import init_csv
+from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
+from visualizador.adc_service import ADCService
+from visualizador.signal_processing_service import SignalProcessingService
+from visualizador.ui_service import UIService
 
 def main():
     print("=" * 70)
@@ -24,49 +23,37 @@ def main():
     print("  Boton aVR  - Derivacion aVR")
     print("-" * 70)
     print("VISUALIZACION:")
-    print("  • Senal ECG cruda (directo del ADC)")
-    print("  • Senal ECG con baseline EMA")
-    print("  • Deteccion automatica de picos R")
-    print("  • Grafica de descarga bifasica del capacitor")
-    print("  • Energias en tiempo real")
+    print("  • Senal ECG ADC Raw")
     print("=" * 70)
     print()
 
-    # Initialize data manager
-    data_manager = DataManager()
-    data_manager.csv_filename, data_manager.csv_file, data_manager.csv_writer = init_csv()
+    # Initialize services
+    adc_service = ADCService()
+    signal_processing_service = SignalProcessingService()
+    ui_service = UIService()
 
-    # Initialize serial readers
-    serial_reader_esp32 = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE)
-    serial_reader_arduino = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE)
+    # Connect services
+    adc_service.set_services(signal_processing_service, ui_service)
+    signal_processing_service.set_ui_service(ui_service)
 
-    # Setup plot
-    setup_result = setup_plot(data_manager, serial_reader_esp32)
-    (fig, ax1, ax2, ax3, ax_info, line_raw, line_filtered, line_baseline,
-     peaks_line, post_r_line, discharge_line, line_descarga,
-     status_text, info_text, btn_di, btn_dii, btn_diii, btn_avr) = setup_result
-
-    # Update plot setup with serial reader
-    # Note: We need to recreate buttons with proper callbacks, but for simplicity, we'll handle it in the update function
+    # Start services
+    adc_service.start()
+    signal_processing_service.start()
+    ui_service.start(adc_service)
 
     try:
-        print("🚀 Iniciando lecturas seriales...\n")
+        print("🚀 Iniciando servicios...\n")
 
-        serial_reader_esp32.start(data_manager)
-        time.sleep(1)
-        serial_reader_arduino.start(data_manager)
-        time.sleep(2)
-
-        print("Ambos puertos seriales iniciados")
-        print("   -> ESP32 leyendo ECG en COM7")
-        print("   -> Arduino leyendo energia en COM8\n")
+        print("Servicios iniciados:")
+        print("   -> ADC Service: ESP32 y Arduino")
+        print("   -> Signal Processing Service: Filtrado")
+        print("   -> UI Service: Interfaz gráfica\n")
 
         def print_stats():
-            while serial_reader_esp32.running:
+            while adc_service.running:
                 time.sleep(10)
-                with data_manager.data_lock:  # Though counters are in serial_reader, to be safe
-                    valid = serial_reader_esp32.valid_packets
-                    invalid = serial_reader_esp32.invalid_packets
+                valid = adc_service.esp32_reader.valid_packets if hasattr(adc_service.esp32_reader, 'valid_packets') else 0
+                invalid = adc_service.esp32_reader.invalid_packets if hasattr(adc_service.esp32_reader, 'invalid_packets') else 0
                 if valid > 0:
                     error_rate = (invalid / (valid + invalid)) * 100
                     print(f"ESP32: {valid} paquetes validos, "
@@ -75,25 +62,12 @@ def main():
         stats_thread = threading.Thread(target=print_stats, daemon=True)
         stats_thread.start()
 
-        ani = animation.FuncAnimation(fig, lambda frame: update_plot(frame, data_manager, line_raw, line_filtered, line_baseline, peaks_line, post_r_line, discharge_line, line_descarga, status_text, info_text, ax1, ax2, ax3),
-                                      interval=refresh_interval, blit=False, cache_frame_data=False)
-
         print("Abriendo ventana de visualizacion...\n")
         print("INSTRUCCIONES:")
-        print("   • Usar botones para cambiar derivaciones manualmente")
-        print("   • Grafica inferior muestra descarga bifasica\n")
+        print("   • Usar botones para cambiar derivaciones manualmente\n")
 
-        def on_close(event):
-            print("\nCerrando aplicacion...")
-            serial_reader_esp32.stop()
-            serial_reader_arduino.stop()
-            if data_manager.csv_file:
-                data_manager.csv_file.close()
-                print(f"Archivo CSV guardado: {data_manager.csv_filename}")
-            plt.close('all')
-
-        fig.canvas.mpl_connect('close_event', on_close)
-        plt.show()
+        # Run the UI service (blocking)
+        ui_service.run_app()
 
     except KeyboardInterrupt:
         print("\nInterrupcion por teclado - Cerrando...")
@@ -102,12 +76,10 @@ def main():
         import traceback
         traceback.print_exc()
     finally:
-        print("\nCerrando conexiones seriales...")
-        serial_reader_esp32.stop()
-        serial_reader_arduino.stop()
-        if data_manager.csv_file:
-            data_manager.csv_file.close()
-            print(f"Archivo CSV guardado: {data_manager.csv_filename}")
+        print("\nCerrando servicios...")
+        adc_service.stop()
+        signal_processing_service.stop()
+        ui_service.stop()
         print("Aplicacion cerrada correctamente")
 
 if __name__ == "__main__":

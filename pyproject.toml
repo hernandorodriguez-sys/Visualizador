@@ -27,10 +27,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Visualization",
 ]
 dependencies = [
-    "matplotlib>=3.10.7",
+    "pyqtgraph>=0.13.0",
     "numpy>=2.3.5",
     "pyserial>=3.5",
     "scipy>=1.16.3",
+    "PyQt6>=6.0.0",
 ]
 
 [project.urls]

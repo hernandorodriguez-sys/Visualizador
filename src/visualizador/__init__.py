@@ -12,7 +12,8 @@ from .data_manager import DataManager
 from .filters import BaselineEMA
 from .plot_utils import setup_plot, update_plot
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
-from .utils import init_csv, detect_r_peaks_improved
+from .utils import detect_r_peaks_improved
+from .data_recorder import DataRecorder
 
 __all__ = [
     "DataManager",
@@ -21,6 +22,6 @@ __all__ = [
     "update_plot",
     "SerialReaderESP32",
     "SerialReaderArduino",
-    "init_csv",
+    "DataRecorder",
     "detect_r_peaks_improved",
 ]

@@ -1,45 +1,7 @@
-import csv
-from datetime import datetime
 import numpy as np
 from scipy import signal
 from scipy.ndimage import gaussian_filter1d
 from .config import DEBUG_MODE, LEADS, MIN_PEAK_DISTANCE, MIN_PEAK_HEIGHT, PEAK_WIDTH_MIN, PEAK_PROMINENCE, POST_R_DELAY_SAMPLES
-
-def init_csv():
-    """Inicializa archivo CSV"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_filename = f"ecg_data_{timestamp}.csv"
-
-    csv_file = open(csv_filename, 'w', newline='')
-    csv_writer = csv.writer(csv_file)
-
-    csv_writer.writerow([
-        'Timestamp_ms',
-        'Voltaje_Capacitor_V',
-        'Corriente_A',
-        'Energia_Fase1_J',
-        'Energia_Fase2_J',
-        'Energia_Total_J',
-        'Estado'
-    ])
-    csv_file.flush()
-
-    print(f"Archivo CSV creado: {csv_filename}")
-    return csv_filename, csv_file, csv_writer
-
-def write_csv_row(csv_writer, csv_file, timestamp, vcap, corriente, e_f1, e_f2, e_total, estado):
-    """Escribe fila en CSV"""
-    if csv_writer:
-        csv_writer.writerow([
-            timestamp,
-            f"{vcap:.3f}",
-            f"{corriente:.3f}",
-            f"{e_f1:.4f}",
-            f"{e_f2:.4f}",
-            f"{e_total:.4f}",
-            estado
-        ])
-        csv_file.flush()
 
 def get_current_lead(current_lead_index):
     """Obtiene derivación actual"""
