@@ -30,8 +30,8 @@ class SignalProcessingService:
         self.thread = None
 
         # Communication queues
-        self.input_queue = queue.Queue(maxsize=15000)  # Raw ADC data input
-        self.output_queue = queue.Queue(maxsize=15000)  # Processed data output
+        self.input_queue = queue.Queue(maxsize=30000)  # Raw ADC data input
+        self.output_queue = queue.Queue(maxsize=30000)  # Processed data output
 
         # Service references
         self.ui_service = None
@@ -44,30 +44,30 @@ class SignalProcessingService:
 
         # Filter parameters
         self.nyquist = SAMPLE_RATE / 2
-        # Configurable bandpass filter: default 0.05 - 50 Hz
-        self.low_cutoff = 0.05
-        self.high_cutoff = 50.0
+        # Configurable low-pass filter: default 30 Hz cutoff, order 8
+        self.cutoff = 30.0
+        self.order = 8
 
-        # Design FIR bandpass filter for stability
-        self.fir_coeffs = signal.firwin(101, [self.low_cutoff/self.nyquist, self.high_cutoff/self.nyquist], pass_zero=False)
-        self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
+        # Design Butterworth low-pass filter
+        self.b, self.a = signal.butter(self.order, self.cutoff / self.nyquist, btype='low')
+        self.filter_state = signal.lfilter_zi(self.b, self.a)
 
         print("Signal Processing Service initialized")
 
-    def update_filter_parameters(self, low_cutoff: float, high_cutoff: float):
-        """Update the bandpass filter parameters and redesign the filter"""
-        if low_cutoff >= high_cutoff or low_cutoff < 0.05 or high_cutoff > 120.0 or high_cutoff >= self.nyquist:
-            print(f"Invalid filter parameters: low={low_cutoff}, high={high_cutoff}")
+    def update_filter_parameters(self, cutoff: float, order: int = 8):
+        """Update the low-pass filter parameters and redesign the filter"""
+        if cutoff <= 0.05 or cutoff >= self.nyquist or order < 1 or order > 10:
+            print(f"Invalid filter parameters: cutoff={cutoff}, order={order}")
             return False
 
-        self.low_cutoff = low_cutoff
-        self.high_cutoff = high_cutoff
+        self.cutoff = cutoff
+        self.order = order
 
-        # Redesign FIR bandpass filter
-        self.fir_coeffs = signal.firwin(101, [self.low_cutoff/self.nyquist, self.high_cutoff/self.nyquist], pass_zero=False)
-        self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
+        # Redesign Butterworth low-pass filter
+        self.b, self.a = signal.butter(self.order, self.cutoff / self.nyquist, btype='low')
+        self.filter_state = signal.lfilter_zi(self.b, self.a)
 
-        print(f"Filter updated: {self.low_cutoff:.3f} - {self.high_cutoff:.3f} Hz")
+        print(f"Filter updated: {self.cutoff:.3f} Hz cutoff, order {self.order}")
         return True
 
     def set_ui_service(self, ui_service):
@@ -88,11 +88,13 @@ class SignalProcessingService:
         if self.thread:
             self.thread.join(timeout=1.0)
         # Clean queues and buffers
-        self.input_queue = queue.Queue(maxsize=15000)
-        self.output_queue = queue.Queue(maxsize=15000)
+        self.input_queue = queue.Queue(maxsize=30000)
+        self.output_queue = queue.Queue(maxsize=30000)
         self.signal_buffer.clear()
         self.sample_count = 0
         self.last_log_time = time.time()
+        # Reset filter state
+        self.filter_state = signal.lfilter_zi(self.b, self.a)
         print("Signal Processing Service stopped")
 
     def process_data(self, adc_data: ADCData):
@@ -116,10 +118,10 @@ class SignalProcessingService:
             return None
 
     def _apply_filter(self, voltage: float) -> float:
-        """Apply real-time FIR bandpass filter to voltage"""
-        # Apply FIR filter using maintained state
-        filtered, self.filter_state = signal.lfilter(self.fir_coeffs, 1.0, [voltage], zi=self.filter_state)
-        # FIR filters are always stable, but clamp anyway for safety
+        """Apply real-time Butterworth low-pass filter to voltage"""
+        # Apply IIR filter using maintained state
+        filtered, self.filter_state = signal.lfilter(self.b, self.a, [voltage], zi=self.filter_state)
+        # Clamp for safety
         clamped = max(-5.0, min(5.0, filtered[0]))
         return clamped
 

@@ -631,9 +631,9 @@ class MainWindow(QMainWindow):
         cardio_layout.addWidget(self.fire_control)
         controls_layout.addLayout(cardio_layout)
 
-        # Bandpass filter
-        self.bandpass_filter_control = BandPassFilterWidget(self.adc_service.signal_processing_service)
-        controls_layout.addWidget(self.bandpass_filter_control)
+        # Low-pass filter
+        self.lowpass_filter_control = LowPassFilterWidget(self.adc_service.signal_processing_service)
+        controls_layout.addWidget(self.lowpass_filter_control)
 
         controls_layout.addStretch()
         bottom_layout.addWidget(controls_container, stretch=1)
@@ -858,49 +858,49 @@ class PlotControlWidget(QGroupBox):
         self.ui_service.plot_time_axis = (state == Qt.CheckState.Checked)
 
 
-class BandPassFilterWidget(QGroupBox):
+class LowPassFilterWidget(QGroupBox):
     def __init__(self, signal_processing_service):
-        super().__init__("Band Pass Filter")
+        super().__init__("Low Pass Filter")
         self.signal_processing_service = signal_processing_service
         # Store current displayed values (preview mode)
-        self.displayed_low_cutoff = self.signal_processing_service.low_cutoff
-        self.displayed_high_cutoff = self.signal_processing_service.high_cutoff
+        self.displayed_cutoff = self.signal_processing_service.cutoff
+        self.displayed_order = self.signal_processing_service.order
         self.init_ui()
 
     def init_ui(self):
         layout = QGridLayout()
 
-        # High-pass frequency controls
-        layout.addWidget(QLabel("High-Pass (Hz):"), 0, 0)
-        self.low_cutoff_label = QLabel(f"{self.displayed_low_cutoff:.2f}")
-        layout.addWidget(self.low_cutoff_label, 0, 1)
+        # Cutoff frequency controls
+        layout.addWidget(QLabel("Cutoff (Hz):"), 0, 0)
+        self.cutoff_label = QLabel(f"{self.displayed_cutoff:.1f}")
+        layout.addWidget(self.cutoff_label, 0, 1)
 
-        low_btn_layout = QHBoxLayout()
-        self.low_minus_btn = QPushButton("-")
-        self.low_minus_btn.clicked.connect(self.on_low_minus_clicked)
-        low_btn_layout.addWidget(self.low_minus_btn)
+        cutoff_btn_layout = QHBoxLayout()
+        self.cutoff_minus_btn = QPushButton("-")
+        self.cutoff_minus_btn.clicked.connect(self.on_cutoff_minus_clicked)
+        cutoff_btn_layout.addWidget(self.cutoff_minus_btn)
 
-        self.low_plus_btn = QPushButton("+")
-        self.low_plus_btn.clicked.connect(self.on_low_plus_clicked)
-        low_btn_layout.addWidget(self.low_plus_btn)
+        self.cutoff_plus_btn = QPushButton("+")
+        self.cutoff_plus_btn.clicked.connect(self.on_cutoff_plus_clicked)
+        cutoff_btn_layout.addWidget(self.cutoff_plus_btn)
 
-        layout.addLayout(low_btn_layout, 0, 2)
+        layout.addLayout(cutoff_btn_layout, 0, 2)
 
-        # Low-pass frequency controls
-        layout.addWidget(QLabel("Low-Pass (Hz):"), 1, 0)
-        self.high_cutoff_label = QLabel(f"{self.displayed_high_cutoff:.1f}")
-        layout.addWidget(self.high_cutoff_label, 1, 1)
+        # Order controls
+        layout.addWidget(QLabel("Order:"), 1, 0)
+        self.order_label = QLabel(f"{self.displayed_order}")
+        layout.addWidget(self.order_label, 1, 1)
 
-        high_btn_layout = QHBoxLayout()
-        self.high_minus_btn = QPushButton("-")
-        self.high_minus_btn.clicked.connect(self.on_high_minus_clicked)
-        high_btn_layout.addWidget(self.high_minus_btn)
+        order_btn_layout = QHBoxLayout()
+        self.order_minus_btn = QPushButton("-")
+        self.order_minus_btn.clicked.connect(self.on_order_minus_clicked)
+        order_btn_layout.addWidget(self.order_minus_btn)
 
-        self.high_plus_btn = QPushButton("+")
-        self.high_plus_btn.clicked.connect(self.on_high_plus_clicked)
-        high_btn_layout.addWidget(self.high_plus_btn)
+        self.order_plus_btn = QPushButton("+")
+        self.order_plus_btn.clicked.connect(self.on_order_plus_clicked)
+        order_btn_layout.addWidget(self.order_plus_btn)
 
-        layout.addLayout(high_btn_layout, 1, 2)
+        layout.addLayout(order_btn_layout, 1, 2)
 
         # Set and Reset buttons
         button_layout = QHBoxLayout()
@@ -921,52 +921,57 @@ class BandPassFilterWidget(QGroupBox):
 
         self.setLayout(layout)
 
-    def on_low_minus_clicked(self):
-        self.displayed_low_cutoff = max(0.05, self.displayed_low_cutoff - 0.05)
-        self.low_cutoff_label.setText(f"{self.displayed_low_cutoff:.2f}")
+    def on_cutoff_minus_clicked(self):
+        self.displayed_cutoff = max(1.0, self.displayed_cutoff - 5.0)
+        self.cutoff_label.setText(f"{self.displayed_cutoff:.1f}")
         self.clear_status()
 
-    def on_low_plus_clicked(self):
-        self.displayed_low_cutoff += 0.05
-        self.low_cutoff_label.setText(f"{self.displayed_low_cutoff:.2f}")
+    def on_cutoff_plus_clicked(self):
+        self.displayed_cutoff = min(120.0, self.displayed_cutoff + 5.0)
+        self.cutoff_label.setText(f"{self.displayed_cutoff:.1f}")
         self.clear_status()
 
-    def on_high_minus_clicked(self):
-        self.displayed_high_cutoff = max(1.0, self.displayed_high_cutoff - 5.0)
-        self.high_cutoff_label.setText(f"{self.displayed_high_cutoff:.1f}")
+    def on_order_minus_clicked(self):
+        self.displayed_order = max(1, self.displayed_order - 1)
+        self.order_label.setText(f"{self.displayed_order}")
         self.clear_status()
 
-    def on_high_plus_clicked(self):
-        self.displayed_high_cutoff += 5.0
-        self.high_cutoff_label.setText(f"{self.displayed_high_cutoff:.1f}")
+    def on_order_plus_clicked(self):
+        self.displayed_order = min(10, self.displayed_order + 1)
+        self.order_label.setText(f"{self.displayed_order}")
         self.clear_status()
 
     def on_set_clicked(self):
         # Validate parameters
-        if self.displayed_low_cutoff >= self.displayed_high_cutoff:
+        if self.displayed_cutoff <= 0.05 or self.displayed_cutoff >= self.signal_processing_service.nyquist:
             QMessageBox.warning(self, "Invalid Filter Parameters",
-                              "High-pass frequency must be less than low-pass frequency.")
+                              "Cutoff frequency must be between 0.05 Hz and Nyquist frequency.")
+            return
+
+        if self.displayed_order < 1 or self.displayed_order > 10:
+            QMessageBox.warning(self, "Invalid Filter Parameters",
+                              "Order must be between 1 and 10.")
             return
 
         # Apply the filter parameters
         success = self.signal_processing_service.update_filter_parameters(
-            self.displayed_low_cutoff, self.displayed_high_cutoff)
+            self.displayed_cutoff, self.displayed_order)
 
         if success:
-            self.status_label.setText("Setted!")
+            self.status_label.setText("Set!")
             # Update actual values to match displayed
-            self.signal_processing_service.low_cutoff = self.displayed_low_cutoff
-            self.signal_processing_service.high_cutoff = self.displayed_high_cutoff
+            self.signal_processing_service.cutoff = self.displayed_cutoff
+            self.signal_processing_service.order = self.displayed_order
         else:
             QMessageBox.warning(self, "Invalid Filter Parameters",
                               "Filter parameters are out of valid range.")
             self.status_label.setText("")
 
     def on_reset_clicked(self):
-        self.displayed_low_cutoff = 0.05
-        self.displayed_high_cutoff = 50.0
-        self.low_cutoff_label.setText("0.05")
-        self.high_cutoff_label.setText("50.0")
+        self.displayed_cutoff = 30.0
+        self.displayed_order = 8
+        self.cutoff_label.setText("30.0")
+        self.order_label.setText("8")
         self.clear_status()
 
     def clear_status(self):

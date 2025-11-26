@@ -26,7 +26,7 @@ class SerialReaderESP32:
         self.sync_buffer = []
 
         # Processing thread components
-        self.processing_queue = queue.Queue(maxsize=15000)
+        self.processing_queue = queue.Queue(maxsize=30000)
         self.processing_thread = None
         self.signal_processing_service = None
 
@@ -215,7 +215,7 @@ class SerialReaderESP32:
                             pass
                         last_log_time = current_time
 
-                time.sleep(0.0005)
+                time.sleep(0.001)  # Reduced polling frequency to lower CPU usage
 
             except Exception as e:
                 if DEBUG_MODE:
@@ -241,7 +241,7 @@ class SerialReaderESP32:
         if self.ser:
             self.ser.close()
         # Clean queue and reset counters
-        self.processing_queue = queue.Queue(maxsize=15000)
+        self.processing_queue = queue.Queue(maxsize=30000)
         self.total_bytes_received = 0
         self.valid_packets = 0
         self.invalid_packets = 0

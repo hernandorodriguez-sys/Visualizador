@@ -32,8 +32,12 @@ class UIService(QObject):
         self.thread = None
 
         # Communication queues
-        self.processed_data_queue = queue.Queue(maxsize=15000)  # Processed signal data input
-        self.adc_data_queue = queue.Queue(maxsize=15000)  # ADC data input for metadata
+        self.processed_data_queue = queue.Queue(maxsize=30000)  # Processed signal data input
+        self.adc_data_queue = queue.Queue(maxsize=30000)  # ADC data input for metadata
+        self.recording_queue = queue.Queue(maxsize=30000)  # Data to record to file
+
+        # Recording thread
+        self.recording_thread = None
 
         # UI components
         self.app = None
@@ -92,6 +96,10 @@ class UIService(QObject):
             self.timer.timeout.connect(self._update_ui)
             self.timer.start(10)  # Update every 10ms for better real-time performance
 
+            # Start recording thread
+            self.recording_thread = threading.Thread(target=self._recording_worker, daemon=True)
+            self.recording_thread.start()
+
             print("UI Service started")
 
     def stop(self):
@@ -99,9 +107,12 @@ class UIService(QObject):
         self.running = False
         if self.timer:
             self.timer.stop()
+        if self.recording_thread and self.recording_thread.is_alive():
+            self.recording_thread.join(timeout=1.0)
         # Clean queues and buffers
-        self.processed_data_queue = queue.Queue(maxsize=15000)
-        self.adc_data_queue = queue.Queue(maxsize=15000)
+        self.processed_data_queue = queue.Queue(maxsize=30000)
+        self.adc_data_queue = queue.Queue(maxsize=30000)
+        self.recording_queue = queue.Queue(maxsize=30000)
         self.voltage_buffer.clear()
         self.time_buffer.clear()
         self.sample_count = 0
@@ -154,6 +165,21 @@ class UIService(QObject):
         self.esp32_connected = esp32_connected
         self.arduino_connected = arduino_connected
 
+    def _recording_worker(self):
+        """Background thread for recording data to file"""
+        while self.running:
+            try:
+                record_data = self.recording_queue.get(timeout=0.1)
+                # record_data is a tuple: (timestamp, ecg_voltage, vcap, corriente, e_f1, e_f2, e_total, estado)
+                self.data_recorder.write_row(*record_data)
+                self.recording_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"[UI] Recording thread error: {e}")
+                time.sleep(0.01)
+
     def _process_incoming_data(self, max_items_per_update=2000):
         """Process incoming data from queues (limited per update cycle for responsiveness)"""
         items_processed = 0
@@ -191,7 +217,11 @@ class UIService(QObject):
                 # Record ECG data at reduced rate (every 10 samples ~100 Hz)
                 self.ecg_record_counter += 1
                 if self.ecg_record_counter % 10 == 0:
-                    self.data_recorder.write_row(processed_data.timestamp / 1000.0, voltage_with_gain)
+                    # Put in recording queue for background thread
+                    try:
+                        self.recording_queue.put_nowait((processed_data.timestamp / 1000.0, voltage_with_gain, None, None, None, None, None, None))
+                    except queue.Full:
+                        pass  # Drop if queue full to avoid blocking
 
                 self.processed_data_queue.task_done()
                 items_processed += 1
@@ -226,13 +256,16 @@ class UIService(QObject):
                             self.discharge_events.append((self.sample_count, adc_data.timestamp, tiempo_desde_r))
                             self.last_discharge_time = adc_data.timestamp
 
-                    # Record to CSV
-                    self.data_recorder.write_row(
-                        (energia['timestamp'] if 'timestamp' in energia else adc_data.timestamp) / 1000.0,
-                        None,  # ecg_voltage
-                        energia['vcap'], energia['corriente'],
-                        energia['e_f1'], energia['e_f2'], energia['e_total'], estado
-                    )
+                    # Record to CSV via background thread
+                    try:
+                        self.recording_queue.put_nowait((
+                            (energia['timestamp'] if 'timestamp' in energia else adc_data.timestamp) / 1000.0,
+                            None,  # ecg_voltage
+                            energia['vcap'], energia['corriente'],
+                            energia['e_f1'], energia['e_f2'], energia['e_total'], estado
+                        ))
+                    except queue.Full:
+                        pass  # Drop if queue full to avoid blocking
 
                 self.adc_data_queue.task_done()
                 items_processed += 1
@@ -253,7 +286,7 @@ class UIService(QObject):
         current_time = time.time()
         if current_time - self.last_log_time > 10:
             try:
-                logger.info(f"UI queues - Processed data: {self.processed_data_queue.qsize()}, ADC data: {self.adc_data_queue.qsize()}")
+                logger.info(f"UI queues - Processed data: {self.processed_data_queue.qsize()}, ADC data: {self.adc_data_queue.qsize()}, Recording: {self.recording_queue.qsize()}")
             except:
                 pass
             self.last_log_time = current_time
