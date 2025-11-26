@@ -6,9 +6,11 @@ import numpy as np
 from scipy import signal
 
 class SerialReaderESP32:
-    def __init__(self, port, baud_rate):
+    def __init__(self, port, baud_rate, max_connection_attempts=5):
         self.port = port
         self.baud_rate = baud_rate
+        self.max_connection_attempts = max_connection_attempts
+        self.connection_attempts = 0
         self.ser = None
         self.running = False
         self.total_bytes_received = 0
@@ -17,12 +19,14 @@ class SerialReaderESP32:
         self.sync_buffer = []
 
     def connect(self):
-        max_attempts = 5
-        for attempt in range(max_attempts):
+        if self.connection_attempts >= self.max_connection_attempts:
+            return False
+
+        for attempt in range(self.max_connection_attempts - self.connection_attempts):
             try:
                 if self.ser:
                     self.ser.close()
-                print(f"[ESP32] Intentando conectar a {self.port}... (intento {attempt + 1})")
+                print(f"[ESP32] Intentando conectar a {self.port}... (intento {self.connection_attempts + attempt + 1})")
                 self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
                 time.sleep(2)
 
@@ -30,10 +34,13 @@ class SerialReaderESP32:
                 self.ser.flushOutput()
 
                 print(f"[ESP32] Conexion establecida en {self.port}")
+                self.connection_attempts = 0  # Reset on success
                 return True
             except Exception as e:
-                print(f"[ESP32] Error en intento {attempt + 1}: {e}")
+                print(f"[ESP32] Error en intento {self.connection_attempts + attempt + 1}: {e}")
                 time.sleep(1)
+
+        self.connection_attempts += (self.max_connection_attempts - self.connection_attempts)
         return False
 
     def send_lead_command(self, lead_name):
@@ -69,19 +76,19 @@ class SerialReaderESP32:
         self.valid_packets += 1
         return voltage
 
-    def read_data(self, data_manager):
+    def read_data(self, adc_service):
         """Lee datos ECG usando sincronización robusta"""
         print("[ESP32] Iniciando lectura de datos ECG...")
 
         while self.running:
             try:
                 if not self.ser or not self.ser.is_open:
-                    data_manager.esp32_connected = False
+                    if self.connection_attempts >= self.max_connection_attempts:
+                        time.sleep(1)  # Just wait, don't try to reconnect
+                        continue
                     if not self.connect():
                         time.sleep(1)
                         continue
-
-                data_manager.esp32_connected = True
 
                 if self.ser.in_waiting > 0:
                     raw_bytes = self.ser.read(self.ser.in_waiting)
@@ -95,17 +102,19 @@ class SerialReaderESP32:
                             if len(parts) >= 2:
                                 lead_idx = int(parts[0].strip())
                                 lead_name = parts[1].strip()
-                                with data_manager.data_lock:
-                                    data_manager.current_lead_index = lead_idx
+                                metadata = {'lead_change': {'index': lead_idx, 'name': lead_name}}
+                                adc_service.on_esp32_data(0.0, metadata)  # Send metadata without voltage
                                 print(f"[ESP32] Cambio de derivacion: {lead_name}")
 
                         if "R_PEAK:" in text:
-                            with data_manager.data_lock:
-                                data_manager.last_r_peak_time = int(time.time() * 1000)
+                            metadata = {'r_peak': True}
+                            adc_service.on_esp32_data(0.0, metadata)  # Send metadata without voltage
                             if DEBUG_MODE:
                                 print(f"[ESP32] Pico R detectado")
 
                         if "DISPARO:" in text:
+                            metadata = {'disparo': text.strip()}
+                            adc_service.on_esp32_data(0.0, metadata)  # Send metadata without voltage
                             if DEBUG_MODE:
                                 print(f"[ESP32] {text.strip()}")
                     except:
@@ -132,14 +141,8 @@ class SerialReaderESP32:
                             voltage = self.decode_packet(packet)
 
                             if voltage is not None:
-                                filtered_voltage, baseline = data_manager.baseline_filter.process_sample(voltage)
-
-                                with data_manager.data_lock:
-                                    data_manager.voltage_buffer.append(voltage)
-                                    data_manager.filtered_buffer.append(filtered_voltage)
-                                    data_manager.baseline_buffer.append(baseline)
-                                    data_manager.time_buffer.append(data_manager.sample_count)
-                                    data_manager.sample_count += 1
+                                # Send raw voltage data to ADC service
+                                adc_service.on_esp32_data(voltage)
 
                             self.sync_buffer = self.sync_buffer[4:]
                         else:
@@ -152,13 +155,12 @@ class SerialReaderESP32:
             except Exception as e:
                 if DEBUG_MODE:
                     print(f"[ESP32] ❌ Error en lectura: {e}")
-                data_manager.esp32_connected = False
                 time.sleep(1)
 
-    def start(self, data_manager):
+    def start(self, adc_service):
         self.running = True
         import threading
-        self.thread = threading.Thread(target=self.read_data, args=(data_manager,), daemon=True)
+        self.thread = threading.Thread(target=self.read_data, args=(adc_service,), daemon=True)
         self.thread.start()
 
     def stop(self):
@@ -167,19 +169,23 @@ class SerialReaderESP32:
             self.ser.close()
 
 class SerialReaderArduino:
-    def __init__(self, port, baud_rate):
+    def __init__(self, port, baud_rate, max_connection_attempts=5):
         self.port = port
         self.baud_rate = baud_rate
+        self.max_connection_attempts = max_connection_attempts
+        self.connection_attempts = 0
         self.ser = None
         self.running = False
 
     def connect(self):
-        max_attempts = 5
-        for attempt in range(max_attempts):
+        if self.connection_attempts >= self.max_connection_attempts:
+            return False
+
+        for attempt in range(self.max_connection_attempts - self.connection_attempts):
             try:
                 if self.ser:
                     self.ser.close()
-                print(f"[ARDUINO] Intentando conectar a {self.port}... (intento {attempt + 1})")
+                print(f"[ARDUINO] Intentando conectar a {self.port}... (intento {self.connection_attempts + attempt + 1})")
                 self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
                 time.sleep(2)
 
@@ -187,10 +193,13 @@ class SerialReaderArduino:
                 self.ser.flushOutput()
 
                 print(f"[ARDUINO] Conexion establecida en {self.port}")
+                self.connection_attempts = 0  # Reset on success
                 return True
             except Exception as e:
-                print(f"[ARDUINO] Error en intento {attempt + 1}: {e}")
+                print(f"[ARDUINO] Error en intento {self.connection_attempts + attempt + 1}: {e}")
                 time.sleep(1)
+
+        self.connection_attempts += (self.max_connection_attempts - self.connection_attempts)
         return False
 
     def send_command(self, command):
@@ -202,7 +211,7 @@ class SerialReaderArduino:
             except Exception as e:
                 print(f"[ARDUINO] ❌ Error enviando comando: {e}")
 
-    def process_arduino_data(self, line, data_manager):
+    def process_arduino_data(self, line, adc_service):
         """Procesa datos del Arduino (formato CSV)"""
         try:
             parts = line.strip().split(',')
@@ -215,64 +224,41 @@ class SerialReaderArduino:
                 e_total = float(parts[5])
                 estado = parts[6]
 
-                with data_manager.data_lock:
-                    if estado == "CARGA":
-                        data_manager.energia_carga_actual = e_total
-                    elif estado == "ESPERANDO":
-                        pass
-                    elif estado.startswith("DESCARGA"):
-                        data_manager.energia_fase1_actual = e_f1
-                        data_manager.energia_fase2_actual = e_f2
-                        data_manager.energia_total_ciclo = e_total
-
-                    # Capturar datos para gráfica de descarga bifásica
-                    with data_manager.data_lock:
-                        if estado == "DESCARGA_F1" and (timestamp - data_manager.last_discharge_time > 1000):
-                            data_manager.descarga_voltage_buffer.clear()
-                            data_manager.descarga_time_buffer.clear()
-                            data_manager.descarga_timestamp_inicio = timestamp
-
-                        if data_manager.descarga_timestamp_inicio > 0:
-                            tiempo_relativo = timestamp - data_manager.descarga_timestamp_inicio
-                            data_manager.descarga_voltage_buffer.append(vcap)
-                            data_manager.descarga_time_buffer.append(tiempo_relativo)
-
-                        if estado == "DESCARGA_F1" and (timestamp - data_manager.last_discharge_time > 1000):
-                            tiempo_desde_r = timestamp - data_manager.last_r_peak_time if data_manager.last_r_peak_time > 0 else 0
-                            data_manager.discharge_events.append((data_manager.sample_count, timestamp, tiempo_desde_r))
-                            data_manager.last_discharge_time = timestamp
-
-                data_manager.write_csv_row(timestamp, vcap, corriente, e_f1, e_f2, e_total, estado)
+                # Send energy data to ADC service
+                metadata = {
+                    'energia': {
+                        'vcap': vcap,
+                        'corriente': corriente,
+                        'e_f1': e_f1,
+                        'e_f2': e_f2,
+                        'e_total': e_total,
+                        'estado': estado
+                    }
+                }
+                adc_service.on_arduino_data(timestamp, vcap, metadata)
 
         except Exception as e:
             if DEBUG_MODE:
                 print(f"[ARDUINO] Error procesando datos: {e}")
 
-    def read_data(self, data_manager):
+    def read_data(self, adc_service):
         print("[ARDUINO] Iniciando lectura de datos de energia...")
 
         while self.running:
             try:
                 if not self.ser or not self.ser.is_open:
-                    data_manager.arduino_connected = False
+                    if self.connection_attempts >= self.max_connection_attempts:
+                        time.sleep(1)  # Just wait, don't try to reconnect
+                        continue
                     if not self.connect():
                         time.sleep(1)
                         continue
-
-                data_manager.arduino_connected = True
-
-                if data_manager.force_charge:
-                    self.send_command("FORCE_CHARGE")
-                    data_manager.force_charge = False
-                if data_manager.force_discharge:
-                    self.send_command("FORCE_DISCHARGE")
-                    data_manager.force_discharge = False
 
                 if self.ser.in_waiting > 0:
                     try:
                         line = self.ser.readline().decode('utf-8', errors='ignore')
                         if ',' in line and line.count(',') >= 6:
-                            self.process_arduino_data(line, data_manager)
+                            self.process_arduino_data(line, adc_service)
                     except Exception as e:
                         if DEBUG_MODE:
                             print(f"[ARDUINO] Error leyendo línea: {e}")
@@ -282,13 +268,12 @@ class SerialReaderArduino:
             except Exception as e:
                 if DEBUG_MODE:
                     print(f"[ARDUINO] ❌ Error en lectura: {e}")
-                data_manager.arduino_connected = False
                 time.sleep(1)
 
-    def start(self, data_manager):
+    def start(self, adc_service):
         self.running = True
         import threading
-        self.thread = threading.Thread(target=self.read_data, args=(data_manager,), daemon=True)
+        self.thread = threading.Thread(target=self.read_data, args=(adc_service,), daemon=True)
         self.thread.start()
 
     def stop(self):
