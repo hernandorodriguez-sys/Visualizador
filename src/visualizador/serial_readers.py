@@ -6,9 +6,11 @@ import numpy as np
 from scipy import signal
 
 class SerialReaderESP32:
-    def __init__(self, port, baud_rate):
+    def __init__(self, port, baud_rate, max_connection_attempts=5):
         self.port = port
         self.baud_rate = baud_rate
+        self.max_connection_attempts = max_connection_attempts
+        self.connection_attempts = 0
         self.ser = None
         self.running = False
         self.total_bytes_received = 0
@@ -17,12 +19,14 @@ class SerialReaderESP32:
         self.sync_buffer = []
 
     def connect(self):
-        max_attempts = 5
-        for attempt in range(max_attempts):
+        if self.connection_attempts >= self.max_connection_attempts:
+            return False
+
+        for attempt in range(self.max_connection_attempts - self.connection_attempts):
             try:
                 if self.ser:
                     self.ser.close()
-                print(f"[ESP32] Intentando conectar a {self.port}... (intento {attempt + 1})")
+                print(f"[ESP32] Intentando conectar a {self.port}... (intento {self.connection_attempts + attempt + 1})")
                 self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
                 time.sleep(2)
 
@@ -30,10 +34,13 @@ class SerialReaderESP32:
                 self.ser.flushOutput()
 
                 print(f"[ESP32] Conexion establecida en {self.port}")
+                self.connection_attempts = 0  # Reset on success
                 return True
             except Exception as e:
-                print(f"[ESP32] Error en intento {attempt + 1}: {e}")
+                print(f"[ESP32] Error en intento {self.connection_attempts + attempt + 1}: {e}")
                 time.sleep(1)
+
+        self.connection_attempts += (self.max_connection_attempts - self.connection_attempts)
         return False
 
     def send_lead_command(self, lead_name):
@@ -76,6 +83,9 @@ class SerialReaderESP32:
         while self.running:
             try:
                 if not self.ser or not self.ser.is_open:
+                    if self.connection_attempts >= self.max_connection_attempts:
+                        time.sleep(1)  # Just wait, don't try to reconnect
+                        continue
                     if not self.connect():
                         time.sleep(1)
                         continue
@@ -159,19 +169,23 @@ class SerialReaderESP32:
             self.ser.close()
 
 class SerialReaderArduino:
-    def __init__(self, port, baud_rate):
+    def __init__(self, port, baud_rate, max_connection_attempts=5):
         self.port = port
         self.baud_rate = baud_rate
+        self.max_connection_attempts = max_connection_attempts
+        self.connection_attempts = 0
         self.ser = None
         self.running = False
 
     def connect(self):
-        max_attempts = 5
-        for attempt in range(max_attempts):
+        if self.connection_attempts >= self.max_connection_attempts:
+            return False
+
+        for attempt in range(self.max_connection_attempts - self.connection_attempts):
             try:
                 if self.ser:
                     self.ser.close()
-                print(f"[ARDUINO] Intentando conectar a {self.port}... (intento {attempt + 1})")
+                print(f"[ARDUINO] Intentando conectar a {self.port}... (intento {self.connection_attempts + attempt + 1})")
                 self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
                 time.sleep(2)
 
@@ -179,10 +193,13 @@ class SerialReaderArduino:
                 self.ser.flushOutput()
 
                 print(f"[ARDUINO] Conexion establecida en {self.port}")
+                self.connection_attempts = 0  # Reset on success
                 return True
             except Exception as e:
-                print(f"[ARDUINO] Error en intento {attempt + 1}: {e}")
+                print(f"[ARDUINO] Error en intento {self.connection_attempts + attempt + 1}: {e}")
                 time.sleep(1)
+
+        self.connection_attempts += (self.max_connection_attempts - self.connection_attempts)
         return False
 
     def send_command(self, command):
@@ -230,6 +247,9 @@ class SerialReaderArduino:
         while self.running:
             try:
                 if not self.ser or not self.ser.is_open:
+                    if self.connection_attempts >= self.max_connection_attempts:
+                        time.sleep(1)  # Just wait, don't try to reconnect
+                        continue
                     if not self.connect():
                         time.sleep(1)
                         continue

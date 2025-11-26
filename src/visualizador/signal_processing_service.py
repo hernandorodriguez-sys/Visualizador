@@ -81,47 +81,61 @@ class SignalProcessingService:
         """Main processing loop"""
         while self.running:
             try:
-                # Get raw ADC data
-                adc_data = self.input_queue.get(timeout=0.01)
-                if adc_data.source == 'esp32' and adc_data.voltage > 0:  # Only process actual voltage data
-                    # Apply baseline filter
-                    filtered_voltage, baseline = self.baseline_filter.process_sample(adc_data.voltage)
+                # Process up to 1000 items per cycle for real-time performance
+                items_processed = 0
+                max_items_per_cycle = 1000
 
-                    # Apply anti-aliasing filter
-                    antialiased_voltage = self.iir_filter.process_sample(filtered_voltage)
-
-                    # Create processed data
-                    processed = ProcessedData(
-                        timestamp=adc_data.timestamp,
-                        raw_voltage=adc_data.voltage,
-                        filtered_voltage=filtered_voltage,
-                        baseline=baseline,
-                        antialiased_voltage=antialiased_voltage,
-                        sample_count=self.sample_count,
-                        metadata=adc_data.metadata
-                    )
-
-                    # Send to UI service
-                    if self.ui_service:
-                        self.ui_service.add_processed_data(processed)
-
-                    # Send to output queue
+                while items_processed < max_items_per_cycle:
                     try:
-                        self.output_queue.put_nowait(processed)
-                    except queue.Full:
-                        # Remove oldest if full
-                        try:
-                            self.output_queue.get_nowait()
-                            self.output_queue.put_nowait(processed)
-                        except queue.Empty:
-                            pass
+                        # Get raw ADC data
+                        adc_data = self.input_queue.get(timeout=0.001)
+                        if adc_data.source == 'esp32' and adc_data.voltage > 0:  # Only process actual voltage data
+                            # Apply baseline filter
+                            filtered_voltage, baseline = self.baseline_filter.process_sample(adc_data.voltage)
 
-                    self.sample_count += 1
+                            # Apply anti-aliasing filter
+                            antialiased_voltage = self.iir_filter.process_sample(filtered_voltage)
 
-                self.input_queue.task_done()
+                            # Create processed data
+                            processed = ProcessedData(
+                                timestamp=adc_data.timestamp,
+                                raw_voltage=adc_data.voltage,
+                                filtered_voltage=filtered_voltage,
+                                baseline=baseline,
+                                antialiased_voltage=antialiased_voltage,
+                                sample_count=self.sample_count,
+                                metadata=adc_data.metadata
+                            )
 
-            except queue.Empty:
-                time.sleep(0.001)  # Small delay when no data
+                            # Send to UI service
+                            if self.ui_service:
+                                self.ui_service.add_processed_data(processed)
+
+                            # Send to output queue
+                            try:
+                                self.output_queue.put_nowait(processed)
+                            except queue.Full:
+                                # Remove oldest if full
+                                try:
+                                    self.output_queue.get_nowait()
+                                    self.output_queue.put_nowait(processed)
+                                except queue.Empty:
+                                    pass
+
+                            self.sample_count += 1
+
+                        self.input_queue.task_done()
+                        items_processed += 1
+
+                    except queue.Empty:
+                        break  # No more data to process
+
+                # Small delay if we processed the maximum
+                if items_processed >= max_items_per_cycle:
+                    time.sleep(0.001)
+                else:
+                    time.sleep(0.0001)  # Very small delay when idle
+
             except Exception as e:
                 print(f"Signal Processing error: {e}")
                 time.sleep(0.01)

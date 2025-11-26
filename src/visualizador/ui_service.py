@@ -81,7 +81,7 @@ class UIService(QObject):
             # Start update timer
             self.timer = QTimer()
             self.timer.timeout.connect(self._update_ui)
-            self.timer.start(50)  # Update every 50ms
+            self.timer.start(20)  # Update every 20ms for better real-time performance
 
             print("UI Service started")
 
@@ -125,11 +125,13 @@ class UIService(QObject):
         self.esp32_connected = esp32_connected
         self.arduino_connected = arduino_connected
 
-    def _process_incoming_data(self):
-        """Process incoming data from queues"""
-        # Process processed signal data
+    def _process_incoming_data(self, max_items_per_update=500):
+        """Process incoming data from queues (limited per update cycle for responsiveness)"""
+        items_processed = 0
+
+        # Process processed signal data (limit to prevent UI freezing)
         try:
-            while True:
+            while items_processed < max_items_per_update:
                 processed_data = self.processed_data_queue.get_nowait()
 
                 # Apply gain to raw voltage
@@ -144,13 +146,14 @@ class UIService(QObject):
                 self.sample_count = processed_data.sample_count
 
                 self.processed_data_queue.task_done()
+                items_processed += 1
 
         except queue.Empty:
             pass
 
-        # Process ADC metadata
+        # Process ADC metadata (limit to prevent UI freezing)
         try:
-            while True:
+            while items_processed < max_items_per_update:
                 adc_data = self.adc_data_queue.get_nowait()
 
                 if adc_data.source == 'esp32' and adc_data.metadata:
@@ -183,6 +186,7 @@ class UIService(QObject):
                     )
 
                 self.adc_data_queue.task_done()
+                items_processed += 1
 
         except queue.Empty:
             pass

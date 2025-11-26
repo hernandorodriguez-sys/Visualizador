@@ -289,40 +289,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.plot_control)
         layout.addLayout(status_layout)
 
-        # Timer for updates
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_ui)
-        self.timer.start(50)  # Update every 50ms
-
-    @pyqtSlot()
-    def update_ui(self):
-        update_plot(self.ui_service, self.line_raw, self.status_text, self.ax)
-        self.canvas.draw()
-
-        # Update status widgets
-        current_lead = get_current_lead(self.ui_service.current_lead_index)
-        discharge_list = list(self.ui_service.discharge_events)
-        last_discharge_time = f"{discharge_list[-1][2]:.0f} ms" if discharge_list else "N/A"
-
-        # Update device status
-        self.device_status.update_status(
-            esp32_connected=self.ui_service.esp32_connected,
-            arduino_connected=self.ui_service.arduino_connected
-        )
-
-        # Update cardioversor status
-        self.cardioversor_status.update_status(
-            current_lead=current_lead,
-            charge_energy=self.ui_service.energia_carga_actual,
-            phase1_energy=self.ui_service.energia_fase1_actual,
-            phase2_energy=self.ui_service.energia_fase2_actual,
-            total_energy=self.ui_service.energia_total_ciclo,
-            last_discharge_time=last_discharge_time,
-            total_discharges=len(self.ui_service.discharge_events)
-        )
-
-        # Update data recorder status
-        self.data_recorder_control.update_status()
+        # UI updates are now handled by the UI service
 
 
 class PlotControlWidget(QGroupBox):

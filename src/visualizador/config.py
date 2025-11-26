@@ -13,7 +13,7 @@ SAMPLE_RATE = 2000
 WINDOW_SIZE = 1500
 Y_MIN = -0.5
 Y_MAX = 2
-refresh_interval = 20
+refresh_interval = 25
 buffer_size = 3000
 
 # Peak detection parameters

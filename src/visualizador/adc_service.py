@@ -27,9 +27,12 @@ class ADCService:
         self.signal_processing_service = None
         self.ui_service = None
 
+        # Connection attempt limit
+        self.max_connection_attempts = 5
+
         # Serial readers
-        self.esp32_reader = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE)
-        self.arduino_reader = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE)
+        self.esp32_reader = SerialReaderESP32(SERIAL_PORT_ESP32, BAUD_RATE, self.max_connection_attempts)
+        self.arduino_reader = SerialReaderArduino(SERIAL_PORT_ARDUINO, BAUD_RATE, self.max_connection_attempts)
 
         # Status
         self.esp32_connected = False
@@ -49,12 +52,30 @@ class ADCService:
             self.thread = threading.Thread(target=self._run, daemon=True)
             self.thread.start()
 
-            # Start serial readers
-            self.esp32_reader.start(self)
-            time.sleep(1)
-            self.arduino_reader.start(self)
+            # Try to start serial readers with limited attempts
+            self._start_serial_readers()
 
             print("ADC Data Acquisition Service started")
+
+    def _start_serial_readers(self):
+        """Start serial readers with limited connection attempts"""
+        # Try ESP32 connection
+        try:
+            print("Starting ESP32 reader...")
+            self.esp32_reader.start(self)
+            print("ESP32 reader started")
+        except Exception as e:
+            print(f"ESP32 reader failed to start: {e}")
+
+        time.sleep(1)
+
+        # Try Arduino connection
+        try:
+            print("Starting Arduino reader...")
+            self.arduino_reader.start(self)
+            print("Arduino reader started")
+        except Exception as e:
+            print(f"Arduino reader failed to start: {e}")
 
     def stop(self):
         """Stop the ADC service"""
@@ -84,7 +105,7 @@ class ADCService:
                 # Process commands
                 self._process_commands()
 
-                # Check connection status
+                # Update connection status
                 self.esp32_connected = self.esp32_reader.running and self.esp32_reader.ser and self.esp32_reader.ser.is_open
                 self.arduino_connected = self.arduino_reader.running and self.arduino_reader.ser and self.arduino_reader.ser.is_open
 
