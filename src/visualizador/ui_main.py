@@ -1,7 +1,7 @@
 import sys
 import os
 import csv
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox, QDialog, QListWidget, QComboBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox, QDialog, QListWidget, QComboBox, QSizePolicy
 from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .ui_service import UIService
@@ -413,28 +413,40 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Main horizontal layout
-        main_layout = QHBoxLayout(central_widget)
+        # Main vertical layout
+        main_layout = QVBoxLayout(central_widget)
 
-        # Left side: ECG plot
-        left_layout = QVBoxLayout()
+        # Top container: Device status, Lead control, Data recorder
+        top_container = QWidget()
+        top_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        top_layout = QHBoxLayout(top_container)
+        self.device_status = DeviceStatusWidget()
+        top_layout.addWidget(self.device_status)
+        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
+        top_layout.addWidget(self.lead_control)
+        self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
+        top_layout.addWidget(self.data_recorder_control)
+        main_layout.addWidget(top_container)
+
+        # Bottom container: Plot and controls
+        bottom_container = QWidget()
+        bottom_layout = QHBoxLayout(bottom_container)
+
+        # Left side: ECG plot (give it more width)
+        plot_container = QWidget()
+        plot_layout = QVBoxLayout(plot_container)
         self.plot_widget, self.line_raw, self.status_text = setup_plot(self.ui_service)
-        left_layout.addWidget(self.plot_widget)
-        main_layout.addLayout(left_layout)
+        self.plot_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        plot_layout.addWidget(self.plot_widget)
+        bottom_layout.addWidget(plot_container, stretch=3)
 
         # Right side: Control panels
-        right_layout = QVBoxLayout()
+        controls_container = QWidget()
+        controls_layout = QVBoxLayout(controls_container)
 
-        # Device and cardioversor status
-        status_layout = QHBoxLayout()
-        self.device_status = DeviceStatusWidget()
-        status_layout.addWidget(self.device_status)
+        # Cardioversor status
         self.cardioversor_status = CardioversorStatusWidget()
-        status_layout.addWidget(self.cardioversor_status)
-        right_layout.addLayout(status_layout)
-
-        # Control widgets
-        controls_layout = QVBoxLayout()
+        controls_layout.addWidget(self.cardioversor_status)
 
         # Plot controls
         self.plot_control = PlotControlWidget(self.ui_service)
@@ -448,20 +460,14 @@ class MainWindow(QMainWindow):
         cardio_layout.addWidget(self.fire_control)
         controls_layout.addLayout(cardio_layout)
 
-        # Lead control
-        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
-        controls_layout.addWidget(self.lead_control)
-
-        # Data recorder
-        self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
-        controls_layout.addWidget(self.data_recorder_control)
-
         # Bandpass filter
         self.bandpass_filter_control = BandPassFilterWidget(self.adc_service.signal_processing_service)
         controls_layout.addWidget(self.bandpass_filter_control)
 
-        right_layout.addLayout(controls_layout)
-        main_layout.addLayout(right_layout)
+        controls_layout.addStretch()
+        bottom_layout.addWidget(controls_container, stretch=1)
+
+        main_layout.addWidget(bottom_container, stretch=1)
 
         # UI updates are now handled by the UI service
 
