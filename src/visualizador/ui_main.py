@@ -1,10 +1,10 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox
-from PyQt6.QtCore import QTimer, pyqtSlot
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox
+from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
-from .data_manager import DataManager
+from .ui_service import UIService
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
-from .utils import init_csv, get_current_lead
+from .utils import get_current_lead
 
 class DeviceStatusWidget(QGroupBox):
     def __init__(self):
@@ -169,9 +169,9 @@ class CardioversorFireControlWidget(QGroupBox):
 
 
 class LeadControlWidget(QGroupBox):
-    def __init__(self, data_manager, serial_reader_esp32):
+    def __init__(self, ui_service, serial_reader_esp32):
         super().__init__("Control Derivada")
-        self.data_manager = data_manager
+        self.ui_service = ui_service
         self.serial_reader_esp32 = serial_reader_esp32
         self.init_ui()
 
@@ -198,19 +198,62 @@ class LeadControlWidget(QGroupBox):
 
     def on_lead_button(self, lead):
         if lead == 'DI':
-            on_lead_di_button(None, self.data_manager, self.serial_reader_esp32)
+            on_lead_di_button(None, self.ui_service, self.serial_reader_esp32)
         elif lead == 'DII':
-            on_lead_dii_button(None, self.data_manager, self.serial_reader_esp32)
+            on_lead_dii_button(None, self.ui_service, self.serial_reader_esp32)
         elif lead == 'DIII':
-            on_lead_diii_button(None, self.data_manager, self.serial_reader_esp32)
+            on_lead_diii_button(None, self.ui_service, self.serial_reader_esp32)
         elif lead == 'aVR':
-            on_lead_avr_button(None, self.data_manager, self.serial_reader_esp32)
+            on_lead_avr_button(None, self.ui_service, self.serial_reader_esp32)
+
+
+class DataRecorderControlWidget(QGroupBox):
+    def __init__(self, ui_service):
+        super().__init__("Data Recorder")
+        self.ui_service = ui_service
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QHBoxLayout()
+
+        self.start_button = QPushButton("Start Recording")
+        self.start_button.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 5px;")
+        self.start_button.clicked.connect(self.on_start_clicked)
+        layout.addWidget(self.start_button)
+
+        self.stop_button = QPushButton("Stop Recording")
+        self.stop_button.setStyleSheet("background-color: red; color: white; font-weight: bold; padding: 5px;")
+        self.stop_button.clicked.connect(self.on_stop_clicked)
+        layout.addWidget(self.stop_button)
+
+        self.status_label = QLabel("Recording: ON")
+        self.status_label.setStyleSheet("font-weight: bold; color: green;")
+        layout.addWidget(self.status_label)
+
+        self.setLayout(layout)
+
+    def on_start_clicked(self):
+        self.ui_service.data_recorder.start_recording()
+        self.update_status()
+
+    def on_stop_clicked(self):
+        self.ui_service.data_recorder.stop_recording()
+        self.update_status()
+
+    def update_status(self):
+        is_recording = self.ui_service.data_recorder.is_recording
+        if is_recording:
+            self.status_label.setText("Recording: ON")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
+        else:
+            self.status_label.setText("Recording: OFF")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, data_manager, serial_reader_esp32, serial_reader_arduino):
+    def __init__(self, ui_service, serial_reader_esp32, serial_reader_arduino):
         super().__init__()
-        self.data_manager = data_manager
+        self.ui_service = ui_service
         self.serial_reader_esp32 = serial_reader_esp32
         self.serial_reader_arduino = serial_reader_arduino
 
@@ -225,7 +268,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         # Matplotlib canvas
-        self.canvas, self.ax, self.line_raw, self.status_text = setup_plot()
+        self.canvas, self.ax, self.line_raw, self.status_text = setup_plot(self.ui_service)
         layout.addWidget(self.canvas)
 
         # Status panels
@@ -238,47 +281,100 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.cardioversor_control)
         self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino)
         status_layout.addWidget(self.fire_control)
-        self.lead_control = LeadControlWidget(self.data_manager, self.serial_reader_esp32)
+        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
         status_layout.addWidget(self.lead_control)
+        self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
+        status_layout.addWidget(self.data_recorder_control)
+        self.plot_control = PlotControlWidget(self.ui_service)
+        status_layout.addWidget(self.plot_control)
         layout.addLayout(status_layout)
 
-        # Timer for updates
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_ui)
-        self.timer.start(50)  # Update every 50ms
+        # UI updates are now handled by the UI service
 
-    @pyqtSlot()
-    def update_ui(self):
-        update_plot(self.data_manager, self.line_raw, self.status_text, self.ax)
-        self.canvas.draw()
 
-        # Update status widgets
-        with self.data_manager.data_lock:
-            current_lead = get_current_lead(self.data_manager.current_lead_index)
-            discharge_list = list(self.data_manager.discharge_events)
-            last_discharge_time = f"{discharge_list[-1][2]:.0f} ms" if discharge_list else "N/A"
+class PlotControlWidget(QGroupBox):
+    def __init__(self, ui_service):
+        super().__init__("Plot Controls")
+        self.ui_service = ui_service
+        self.init_ui()
 
-            # Update device status
-            self.device_status.update_status(
-                esp32_connected=self.data_manager.esp32_connected,
-                arduino_connected=self.data_manager.arduino_connected
-            )
+    def init_ui(self):
+        layout = QGridLayout()
 
-            # Update cardioversor status
-            self.cardioversor_status.update_status(
-                current_lead=current_lead,
-                charge_energy=self.data_manager.energia_carga_actual,
-                phase1_energy=self.data_manager.energia_fase1_actual,
-                phase2_energy=self.data_manager.energia_fase2_actual,
-                total_energy=self.data_manager.energia_total_ciclo,
-                last_discharge_time=last_discharge_time,
-                total_discharges=len(self.data_manager.discharge_events)
-            )
+        # Y-axis amplitude controls
+        layout.addWidget(QLabel("Y Min:"), 0, 0)
+        self.y_min_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_min_slider.setRange(-20, 40)
+        self.y_min_slider.setValue(int(self.ui_service.plot_y_min * 10))
+        self.y_min_slider.valueChanged.connect(self.on_y_min_changed)
+        layout.addWidget(self.y_min_slider, 0, 1)
+
+        self.y_min_label = QLabel(f"{self.ui_service.plot_y_min:.1f}")
+        layout.addWidget(self.y_min_label, 0, 2)
+
+        layout.addWidget(QLabel("Y Max:"), 1, 0)
+        self.y_max_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_max_slider.setRange(-20, 40)
+        self.y_max_slider.setValue(int(min(self.ui_service.plot_y_max * 10, 40)))  # Cap at 4.0V
+        self.y_max_slider.valueChanged.connect(self.on_y_max_changed)
+        layout.addWidget(self.y_max_slider, 1, 1)
+
+        self.y_max_label = QLabel(f"{self.ui_service.plot_y_max:.1f}")
+        layout.addWidget(self.y_max_label, 1, 2)
+
+        # Window size control
+        layout.addWidget(QLabel("Window Size:"), 2, 0)
+        self.window_size_spin = QSpinBox()
+        self.window_size_spin.setRange(500, 5000)
+        self.window_size_spin.setValue(self.ui_service.plot_window_size)
+        self.window_size_spin.setSingleStep(100)
+        self.window_size_spin.valueChanged.connect(self.on_window_size_changed)
+        layout.addWidget(self.window_size_spin, 2, 1)
+
+        # Signal gain control
+        layout.addWidget(QLabel("Signal Gain:"), 4, 0)
+        self.gain_slider = QSlider(Qt.Orientation.Horizontal)
+        self.gain_slider.setRange(1, 100)  # 0.1x to 10x gain
+        self.gain_slider.setValue(int(self.ui_service.signal_gain * 10))
+        self.gain_slider.valueChanged.connect(self.on_gain_changed)
+        layout.addWidget(self.gain_slider, 4, 1)
+
+        self.gain_label = QLabel(f"{self.ui_service.signal_gain:.1f}x")
+        layout.addWidget(self.gain_label, 4, 2)
+
+        # Time axis toggle
+        layout.addWidget(QLabel("Time Axis:"), 5, 0)
+        self.time_axis_check = QCheckBox("Use Time (s)")
+        self.time_axis_check.setChecked(self.ui_service.plot_time_axis)
+        self.time_axis_check.stateChanged.connect(self.on_time_axis_changed)
+        layout.addWidget(self.time_axis_check, 5, 1)
+
+        self.setLayout(layout)
+
+    def on_y_min_changed(self, value):
+        y_min = value / 10.0
+        self.ui_service.plot_y_min = y_min
+        self.y_min_label.setText(f"{y_min:.1f}")
+
+    def on_y_max_changed(self, value):
+        y_max = value / 10.0
+        self.ui_service.plot_y_max = y_max
+        self.y_max_label.setText(f"{y_max:.1f}")
+
+    def on_window_size_changed(self, value):
+        self.ui_service.plot_window_size = value
+
+    def on_gain_changed(self, value):
+        gain = value / 10.0
+        self.ui_service.signal_gain = gain
+        self.gain_label.setText(f"{gain:.1f}x")
+
+    def on_time_axis_changed(self, state):
+        self.ui_service.plot_time_axis = (state == Qt.CheckState.Checked)
 
     def closeEvent(self, event):
         self.timer.stop()
         self.serial_reader_esp32.stop()
         self.serial_reader_arduino.stop()
-        if self.data_manager.csv_file:
-            self.data_manager.csv_file.close()
+        self.ui_service.data_recorder.close()
         event.accept()
