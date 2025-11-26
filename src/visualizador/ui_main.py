@@ -4,7 +4,6 @@ from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .ui_service import UIService
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
-from .utils import get_current_lead
 
 class DeviceStatusWidget(QGroupBox):
     def __init__(self):

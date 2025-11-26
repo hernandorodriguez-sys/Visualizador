@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import QApplication
 
 from visualizador.config import SERIAL_PORT_ESP32, SERIAL_PORT_ARDUINO, BAUD_RATE
 from visualizador.adc_service import ADCService
-from visualizador.signal_processing_service import SignalProcessingService
 from visualizador.ui_service import UIService
 
 def main():
@@ -29,16 +28,13 @@ def main():
 
     # Initialize services
     adc_service = ADCService()
-    signal_processing_service = SignalProcessingService()
     ui_service = UIService()
 
     # Connect services
-    adc_service.set_services(signal_processing_service, ui_service)
-    signal_processing_service.set_ui_service(ui_service)
+    adc_service.set_services(None, ui_service)
 
     # Start services
     adc_service.start()
-    signal_processing_service.start()
     ui_service.start(adc_service)
 
     try:
@@ -46,7 +42,6 @@ def main():
 
         print("Servicios iniciados:")
         print("   -> ADC Service: ESP32 y Arduino")
-        print("   -> Signal Processing Service: Filtrado")
         print("   -> UI Service: Interfaz gráfica\n")
 
         def print_stats():
@@ -78,7 +73,6 @@ def main():
     finally:
         print("\nCerrando servicios...")
         adc_service.stop()
-        signal_processing_service.stop()
         ui_service.stop()
         print("Aplicacion cerrada correctamente")
 
