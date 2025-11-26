@@ -1,7 +1,7 @@
 # Configuration file for ECG Monitor Application
 
 # Serial port configurations
-SERIAL_PORT_ESP32 = "COM8"
+SERIAL_PORT_ESP32 = "COM7"
 SERIAL_PORT_ARDUINO = "COM1"
 BAUD_RATE = 115200
 

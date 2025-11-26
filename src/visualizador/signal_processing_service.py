@@ -89,7 +89,7 @@ class SignalProcessingService:
                     try:
                         # Get raw ADC data
                         adc_data = self.input_queue.get(timeout=0.001)
-                        if adc_data.source == 'esp32' and adc_data.voltage > 0:  # Only process actual voltage data
+                        if adc_data.source == 'esp32':  # Process all ESP32 data
                             # Apply baseline filter
                             filtered_voltage, baseline = self.baseline_filter.process_sample(adc_data.voltage)
 
