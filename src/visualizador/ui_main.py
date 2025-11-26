@@ -1,9 +1,12 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox
+import os
+import csv
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QLabel, QGroupBox, QGridLayout, QMessageBox, QSlider, QCheckBox, QSpinBox, QDialog, QListWidget, QComboBox
 from PyQt6.QtCore import QTimer, pyqtSlot, Qt
 from .plot_utils import setup_plot, update_plot, on_lead_di_button, on_lead_dii_button, on_lead_diii_button, on_lead_avr_button
 from .ui_service import UIService
 from .serial_readers import SerialReaderESP32, SerialReaderArduino
+import pyqtgraph as pg
 
 class DeviceStatusWidget(QGroupBox):
     def __init__(self):
@@ -206,6 +209,143 @@ class LeadControlWidget(QGroupBox):
             on_lead_avr_button(None, self.ui_service, self.serial_reader_esp32)
 
 
+class RecordedDataViewer(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Recorded Data Viewer")
+        self.setGeometry(200, 200, 1000, 600)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # File selection
+        file_layout = QHBoxLayout()
+        file_layout.addWidget(QLabel("Select CSV File:"))
+        self.file_combo = QComboBox()
+        self.load_csv_files()
+        self.file_combo.currentTextChanged.connect(self.on_file_selected)
+        file_layout.addWidget(self.file_combo)
+        layout.addLayout(file_layout)
+
+        # Plot widget
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground('#FFE4E1')
+        self.plot_widget.setTitle('Recorded ECG Data', color='black', size='12pt')
+        self.plot_widget.setLabel('left', 'Voltage (V)', color='black')
+        self.plot_widget.setLabel('bottom', 'Time (s)', color='black')
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.7)
+
+        # Create plot items
+        self.ecg_line = self.plot_widget.plot([], [], pen=pg.mkPen('black', width=1.2), name='ECG Voltage')
+        self.cap_line = self.plot_widget.plot([], [], pen=pg.mkPen('blue', width=1.0), name='Capacitor Voltage')
+        self.current_line = self.plot_widget.plot([], [], pen=pg.mkPen('red', width=1.0), name='Current')
+
+        # Add legend
+        legend = pg.LegendItem((80, 60), offset=(70, 20))
+        legend.setParentItem(self.plot_widget.graphicsItem())
+        legend.addItem(self.ecg_line, 'ECG Voltage')
+        legend.addItem(self.cap_line, 'Capacitor Voltage')
+        legend.addItem(self.current_line, 'Current')
+
+        layout.addWidget(self.plot_widget)
+
+        # Column selection
+        column_layout = QHBoxLayout()
+        column_layout.addWidget(QLabel("Plot Column:"))
+        self.column_combo = QComboBox()
+        self.column_combo.addItems(['ECG_Voltage_V', 'Voltaje_Capacitor_V', 'Corriente_A'])
+        self.column_combo.currentTextChanged.connect(self.on_column_changed)
+        column_layout.addWidget(self.column_combo)
+        layout.addLayout(column_layout)
+
+        self.setLayout(layout)
+
+    def load_csv_files(self):
+        recordings_dir = "recordings"
+        if os.path.exists(recordings_dir):
+            csv_files = [f for f in os.listdir(recordings_dir) if f.endswith('.csv')]
+            self.file_combo.addItems(csv_files)
+        else:
+            self.file_combo.addItem("No recordings found")
+
+    def on_file_selected(self, filename):
+        if filename and filename != "No recordings found":
+            filepath = os.path.join("recordings", filename)
+            self.load_csv_data(filepath)
+
+    def load_csv_data(self, filepath):
+        self.data = {'timestamps': [], 'ecg': [], 'vcap': [], 'corriente': [], 'e_f1': [], 'e_f2': [], 'e_total': []}
+        try:
+            with open(filepath, 'r', newline='') as csvfile:
+                reader = csv.reader(csvfile, delimiter=';')
+                header = next(reader)
+                for row in reader:
+                    if len(row) >= 8:
+                        # Parse timestamp
+                        ts_str = row[0].replace(',', '.')
+                        ts = float(ts_str) if ts_str else 0.0
+                        self.data['timestamps'].append(ts)
+
+                        # Parse ECG voltage
+                        ecg_str = row[1].replace(',', '.')
+                        ecg = float(ecg_str) if ecg_str else 0.0
+                        self.data['ecg'].append(ecg)
+
+                        # Parse capacitor voltage
+                        vcap_str = row[2].replace(',', '.')
+                        vcap = float(vcap_str) if vcap_str else 0.0
+                        self.data['vcap'].append(vcap)
+
+                        # Parse current
+                        corr_str = row[3].replace(',', '.')
+                        corr = float(corr_str) if corr_str else 0.0
+                        self.data['corriente'].append(corr)
+
+                        # Parse energies
+                        e1_str = row[4].replace(',', '.')
+                        e1 = float(e1_str) if e1_str else 0.0
+                        self.data['e_f1'].append(e1)
+
+                        e2_str = row[5].replace(',', '.')
+                        e2 = float(e2_str) if e2_str else 0.0
+                        self.data['e_f2'].append(e2)
+
+                        et_str = row[6].replace(',', '.')
+                        et = float(et_str) if et_str else 0.0
+                        self.data['e_total'].append(et)
+
+            self.on_column_changed(self.column_combo.currentText())
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to load CSV: {str(e)}")
+
+    def on_column_changed(self, column):
+        if not hasattr(self, 'data'):
+            return
+
+        x_data = self.data['timestamps']
+        if column == 'ECG_Voltage_V':
+            y_data = self.data['ecg']
+            self.ecg_line.setData(x_data, y_data)
+            self.cap_line.setData([], [])
+            self.current_line.setData([], [])
+        elif column == 'Voltaje_Capacitor_V':
+            y_data = self.data['vcap']
+            self.cap_line.setData(x_data, y_data)
+            self.ecg_line.setData([], [])
+            self.current_line.setData([], [])
+        elif column == 'Corriente_A':
+            y_data = self.data['corriente']
+            self.current_line.setData(x_data, y_data)
+            self.ecg_line.setData([], [])
+            self.cap_line.setData([], [])
+
+        # Auto scale
+        if x_data and y_data:
+            self.plot_widget.setXRange(min(x_data), max(x_data))
+            self.plot_widget.setYRange(min(y_data) - 0.1, max(y_data) + 0.1)
+
+
 class DataRecorderControlWidget(QGroupBox):
     def __init__(self, ui_service):
         super().__init__("Data Recorder")
@@ -225,6 +365,11 @@ class DataRecorderControlWidget(QGroupBox):
         self.stop_button.clicked.connect(self.on_stop_clicked)
         layout.addWidget(self.stop_button)
 
+        self.view_button = QPushButton("View Recorded Data")
+        self.view_button.setStyleSheet("background-color: blue; color: white; font-weight: bold; padding: 5px;")
+        self.view_button.clicked.connect(self.on_view_clicked)
+        layout.addWidget(self.view_button)
+
         self.status_label = QLabel("Recording: OFF")
         self.status_label.setStyleSheet("font-weight: bold; color: red;")
         layout.addWidget(self.status_label)
@@ -238,6 +383,10 @@ class DataRecorderControlWidget(QGroupBox):
     def on_stop_clicked(self):
         self.ui_service.data_recorder.stop_recording()
         self.update_status()
+
+    def on_view_clicked(self):
+        viewer = RecordedDataViewer(self)
+        viewer.exec()
 
     def update_status(self):
         is_recording = self.ui_service.data_recorder.is_recording
@@ -264,32 +413,55 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Layout
-        layout = QVBoxLayout(central_widget)
+        # Main horizontal layout
+        main_layout = QHBoxLayout(central_widget)
 
-        # PyQtGraph plot widget
+        # Left side: ECG plot
+        left_layout = QVBoxLayout()
         self.plot_widget, self.line_raw, self.status_text = setup_plot(self.ui_service)
-        layout.addWidget(self.plot_widget)
+        left_layout.addWidget(self.plot_widget)
+        main_layout.addLayout(left_layout)
 
-        # Status panels
+        # Right side: Control panels
+        right_layout = QVBoxLayout()
+
+        # Device and cardioversor status
         status_layout = QHBoxLayout()
         self.device_status = DeviceStatusWidget()
         status_layout.addWidget(self.device_status)
         self.cardioversor_status = CardioversorStatusWidget()
         status_layout.addWidget(self.cardioversor_status)
-        self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino)
-        status_layout.addWidget(self.cardioversor_control)
-        self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino)
-        status_layout.addWidget(self.fire_control)
-        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
-        status_layout.addWidget(self.lead_control)
-        self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
-        status_layout.addWidget(self.data_recorder_control)
+        right_layout.addLayout(status_layout)
+
+        # Control widgets
+        controls_layout = QVBoxLayout()
+
+        # Plot controls
         self.plot_control = PlotControlWidget(self.ui_service)
-        status_layout.addWidget(self.plot_control)
+        controls_layout.addWidget(self.plot_control)
+
+        # Cardioversor controls
+        cardio_layout = QHBoxLayout()
+        self.cardioversor_control = CardioversorControlWidget(self.serial_reader_arduino)
+        cardio_layout.addWidget(self.cardioversor_control)
+        self.fire_control = CardioversorFireControlWidget(self.serial_reader_arduino)
+        cardio_layout.addWidget(self.fire_control)
+        controls_layout.addLayout(cardio_layout)
+
+        # Lead control
+        self.lead_control = LeadControlWidget(self.ui_service, self.serial_reader_esp32)
+        controls_layout.addWidget(self.lead_control)
+
+        # Data recorder
+        self.data_recorder_control = DataRecorderControlWidget(self.ui_service)
+        controls_layout.addWidget(self.data_recorder_control)
+
+        # Bandpass filter
         self.bandpass_filter_control = BandPassFilterWidget(self.adc_service.signal_processing_service)
-        status_layout.addWidget(self.bandpass_filter_control)
-        layout.addLayout(status_layout)
+        controls_layout.addWidget(self.bandpass_filter_control)
+
+        right_layout.addLayout(controls_layout)
+        main_layout.addLayout(right_layout)
 
         # UI updates are now handled by the UI service
 
