@@ -2,7 +2,7 @@
 
 # Serial port configurations
 SERIAL_PORT_ESP32 = "COM8"
-SERIAL_PORT_ARDUINO = "COM1"
+SERIAL_PORT_ARDUINO = "COM13"
 BAUD_RATE = 115200
 
 # Debug mode

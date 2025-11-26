@@ -62,19 +62,24 @@ def setup_plot(ui_service):
     # Create plot item for ECG data
     line_raw = plot_widget.plot([], [], pen=pg.mkPen('black', width=1.2, alpha=0.95), name='ECG Raw')
 
+    # Create scatter plot item for R-peaks
+    r_peak_scatter = pg.ScatterPlotItem(size=8, pen=pg.mkPen('red'), brush=pg.mkBrush('red'), symbol='o', name='R-Peaks')
+    plot_widget.addItem(r_peak_scatter)
+
     # Add legend
     legend = pg.LegendItem((80, 60), offset=(70, 20))
     legend.setParentItem(plot_widget.graphicsItem())
     legend.addItem(line_raw, 'ECG Raw')
+    legend.addItem(r_peak_scatter, 'R-Peaks')
 
     # Status text item
     status_text = pg.TextItem('', anchor=(0, 1), color='black')
     status_text.setPos(0.02, 0.98)
     plot_widget.addItem(status_text)
 
-    return plot_widget, line_raw, status_text
+    return plot_widget, line_raw, r_peak_scatter, status_text
 
-def update_plot(ui_service, plot_widget, line_raw, status_text):
+def update_plot(ui_service, plot_widget, line_raw, r_peak_scatter, status_text):
     """Actualiza la visualización del ADC raw usando PyQtGraph"""
     if len(ui_service.voltage_buffer) == 0:
         return
@@ -117,6 +122,25 @@ def update_plot(ui_service, plot_widget, line_raw, status_text):
     # Update labels
     xlabel = 'Tiempo (s)' if time_axis else 'Muestras'
     plot_widget.setLabel('bottom', xlabel, color='black')
+
+    # Update R-peak markers
+    if hasattr(ui_service, 'r_peak_buffer') and ui_service.r_peak_buffer:
+        # Filter R-peaks within the visible window
+        visible_r_peaks = []
+        for peak_sample_idx in ui_service.r_peak_buffer:
+            # peak_sample_idx is the absolute index in the full buffers
+            # Check if this peak is within the visible window
+            if start_idx <= peak_sample_idx < len(ui_service.voltage_buffer):
+                # Calculate position relative to visible window
+                relative_idx = peak_sample_idx - start_idx
+                if 0 <= relative_idx < len(x_visible):
+                    peak_voltage = ui_service.voltage_buffer[peak_sample_idx]
+                    peak_x_pos = x_visible[relative_idx]
+                    visible_r_peaks.append({'pos': (peak_x_pos, peak_voltage), 'size': 8, 'pen': 'r', 'brush': 'r'})
+
+        r_peak_scatter.setData(visible_r_peaks)
+    else:
+        r_peak_scatter.setData([])
 
     # Indicadores de conexión
     esp32_status = "ESP32 OK" if ui_service.esp32_connected else "ESP32 ERR"

@@ -8,6 +8,7 @@ from scipy import signal
 from typing import NamedTuple, Optional
 from .config import SAMPLE_RATE, MIN_PEAK_HEIGHT, MIN_PEAK_DISTANCE, PEAK_WIDTH_MIN, PEAK_PROMINENCE
 from .data_types import ADCData
+from .r_peak_detector import detect_r_peaks
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -52,6 +53,10 @@ class SignalProcessingService:
         self.b, self.a = signal.butter(self.order, self.cutoff / self.nyquist, btype='low')
         self.filter_state = signal.lfilter_zi(self.b, self.a)
 
+        # R-peak detection parameters
+        self.r_peak_enabled = False  # Default disabled
+        self.r_peak_threshold = 0.1  # Default threshold in volts
+
         print("Signal Processing Service initialized")
 
     def update_filter_parameters(self, cutoff: float, order: int = 8):
@@ -68,6 +73,18 @@ class SignalProcessingService:
         self.filter_state = signal.lfilter_zi(self.b, self.a)
 
         print(f"Filter updated: {self.cutoff:.3f} Hz cutoff, order {self.order}")
+        return True
+
+    def update_r_peak_parameters(self, enabled: bool, threshold: float):
+        """Update the R-peak detection parameters"""
+        if threshold < 0.0 or threshold > 5.0:
+            print(f"Invalid R-peak threshold: {threshold}")
+            return False
+
+        self.r_peak_enabled = enabled
+        self.r_peak_threshold = threshold
+
+        print(f"R-peak detection updated: enabled={self.r_peak_enabled}, threshold={self.r_peak_threshold:.3f}V")
         return True
 
     def set_ui_service(self, ui_service):
@@ -126,23 +143,22 @@ class SignalProcessingService:
         return clamped
 
     def _detect_peaks(self, filtered_signal) -> list:
-        """Detect peaks in the filtered signal"""
+        """Detect peaks in the filtered signal using simple threshold-based detection"""
         if len(filtered_signal) < MIN_PEAK_DISTANCE:
             return []
 
-        # Convert to numpy array
-        signal_array = np.array(list(filtered_signal))
+        # Use R-peak specific parameters if enabled
+        if self.r_peak_enabled:
+            threshold = self.r_peak_threshold
+            distance = MIN_PEAK_DISTANCE
+        else:
+            threshold = MIN_PEAK_HEIGHT
+            distance = MIN_PEAK_DISTANCE
 
-        # Find peaks
-        peaks, _ = signal.find_peaks(
-            signal_array,
-            height=MIN_PEAK_HEIGHT,
-            distance=MIN_PEAK_DISTANCE,
-            width=PEAK_WIDTH_MIN,
-            prominence=PEAK_PROMINENCE
-        )
+        # Use simple R-peak detection
+        peaks = detect_r_peaks(filtered_signal, threshold, distance)
 
-        return peaks.tolist()
+        return peaks
 
     def _processing_loop(self):
         """Main processing loop"""
@@ -161,10 +177,18 @@ class SignalProcessingService:
                 # if self.sample_count % 10000 == 0:  # Reset every 10000 samples
                 #     self.filter_state = np.zeros(len(self.fir_coeffs) - 1)
 
-                # Detect peaks periodically (every 500 samples to avoid overhead)
+                # Detect R-peaks periodically (every 500 samples to avoid overhead) if enabled
                 peaks = []
-                if self.sample_count % 500 == 0 and len(self.signal_buffer) >= MIN_PEAK_DISTANCE:
-                    peaks = self._detect_peaks(list(self.signal_buffer)[-200:])  # Check last 200 samples
+                if self.r_peak_enabled and self.sample_count % 500 == 0 and len(self.signal_buffer) >= MIN_PEAK_DISTANCE:
+                    # Check last 200 samples for peaks
+                    window_signal = list(self.signal_buffer)[-200:]
+                    window_peaks = self._detect_peaks(window_signal)
+
+                    # Convert window indices to absolute sample indices
+                    # The window starts at len(self.signal_buffer) - 200
+                    window_start_idx = len(self.signal_buffer) - 200
+                    peaks = [window_start_idx + peak_idx for peak_idx in window_peaks]
+
 
                 # Create processed data
                 processed = ProcessedData(
@@ -184,6 +208,7 @@ class SignalProcessingService:
                         timestamp=processed.timestamp,
                         raw_voltage=processed.filtered_voltage,  # Send filtered voltage for display
                         sample_count=processed.sample_count,
+                        peaks=peaks if peaks else None,  # Pass peaks to UI service
                         metadata=processed.metadata
                     )
                     self.ui_service.add_processed_data(ui_processed)

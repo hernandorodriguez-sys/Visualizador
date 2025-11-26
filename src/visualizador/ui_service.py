@@ -11,6 +11,8 @@ from PyQt6.QtCore import QTimer, pyqtSlot, QObject
 from .plot_utils import setup_plot, update_plot
 from .data_recorder import DataRecorder
 from .utils import get_current_lead
+from .r_peak_detector import calculate_bpm
+from .config import SAMPLE_RATE
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,6 +23,7 @@ class ProcessedData(NamedTuple):
     timestamp: int
     raw_voltage: float
     sample_count: int
+    peaks: list = None
     metadata: dict = None
 
 class UIService(QObject):
@@ -47,6 +50,7 @@ class UIService(QObject):
         # Data buffers (similar to DataManager but simplified)
         self.voltage_buffer = deque(maxlen=15000)
         self.time_buffer = deque(maxlen=15000)
+        self.r_peak_buffer = deque(maxlen=100)  # Store recent R-peak positions
         self.sample_count = 0
         self.ecg_record_counter = 0
         self.last_log_time = time.time()
@@ -62,6 +66,7 @@ class UIService(QObject):
         self.discharge_events = []
         self.last_discharge_time = 0
         self.last_r_peak_time = 0
+        self.current_bpm = 0.0
 
         # Plot settings
         self.plot_y_min = -0.5
@@ -214,6 +219,21 @@ class UIService(QObject):
                 self.time_buffer.append(processed_data.sample_count)
                 self.sample_count = processed_data.sample_count
 
+                # Handle R-peak detection
+                if processed_data.peaks:
+                    # Peaks are absolute indices in the signal buffer
+                    for peak_idx in processed_data.peaks:
+                        if peak_idx < len(self.time_buffer):
+                            peak_sample = self.time_buffer[peak_idx]
+                            peak_timestamp = processed_data.timestamp  # Use the timestamp from processed data
+                            self.r_peak_buffer.append(peak_sample)
+                            # Update last R-peak time for cardioversor timing
+                            self.last_r_peak_time = peak_timestamp
+
+                            # Trigger manual discharge if waiting for R-peak
+                            if hasattr(self, 'fire_control') and self.fire_control:
+                                self.fire_control.trigger_manual_discharge()
+
                 # Record ECG data at reduced rate (every 10 samples ~100 Hz)
                 self.ecg_record_counter += 1
                 if self.ecg_record_counter % 10 == 0:
@@ -292,8 +312,8 @@ class UIService(QObject):
             self.last_log_time = current_time
 
         # Update plot
-        if hasattr(self.window, 'line_raw') and hasattr(self.window, 'status_text') and hasattr(self.window, 'plot_widget'):
-            update_plot(self, self.window.plot_widget, self.window.line_raw, self.window.status_text)
+        if hasattr(self.window, 'line_raw') and hasattr(self.window, 'r_peak_scatter') and hasattr(self.window, 'status_text') and hasattr(self.window, 'plot_widget'):
+            update_plot(self, self.window.plot_widget, self.window.line_raw, self.window.r_peak_scatter, self.window.status_text)
 
         # Update status widgets
         current_lead = get_current_lead(self.current_lead_index)
@@ -307,6 +327,14 @@ class UIService(QObject):
                 arduino_connected=self.arduino_connected
             )
 
+        # Calculate BPM from recent R-peaks
+        if hasattr(self, 'r_peak_buffer') and len(self.r_peak_buffer) >= 2:
+            # Use recent peaks for BPM calculation (last 10 peaks for stability)
+            recent_peaks = list(self.r_peak_buffer)[-10:]
+            self.current_bpm = calculate_bpm(recent_peaks, SAMPLE_RATE)
+        else:
+            self.current_bpm = 0.0
+
         # Update cardioversor status
         if hasattr(self.window, 'cardioversor_status'):
             self.window.cardioversor_status.update_status(
@@ -316,7 +344,8 @@ class UIService(QObject):
                 phase2_energy=self.energia_fase2_actual,
                 total_energy=self.energia_total_ciclo,
                 last_discharge_time=last_discharge_time,
-                total_discharges=len(self.discharge_events)
+                total_discharges=len(self.discharge_events),
+                bpm=self.current_bpm
             )
 
         # Update data recorder status

@@ -81,10 +81,16 @@ class CardioversorStatusWidget(QGroupBox):
         self.total_discharges = QLabel("0")
         layout.addWidget(self.total_discharges, 4, 2)
 
+        # BPM display
+        layout.addWidget(QLabel("BPM:"), 5, 2)
+        self.bpm_display = QLabel("0")
+        self.bpm_display.setStyleSheet("font-weight: bold; color: blue;")
+        layout.addWidget(self.bpm_display, 6, 2)
+
         self.setLayout(layout)
 
     def update_status(self, current_lead, charge_energy, phase1_energy, phase2_energy,
-                     total_energy, last_discharge_time, total_discharges):
+                     total_energy, last_discharge_time, total_discharges, bpm=0):
         self.current_lead.setText(current_lead)
         self.charge_energy.setText(f"{charge_energy:.3f}")
         self.phase1_energy.setText(f"{phase1_energy:.3f}")
@@ -92,6 +98,7 @@ class CardioversorStatusWidget(QGroupBox):
         self.total_energy.setText(f"{total_energy:.3f}")
         self.last_discharge_time.setText(last_discharge_time)
         self.total_discharges.setText(str(total_discharges))
+        self.bpm_display.setText(f"{bpm:.1f}")
 
 
 class CardioversorControlWidget(QGroupBox):
@@ -149,6 +156,8 @@ class CardioversorFireControlWidget(QGroupBox):
         super().__init__("Fire Control")
         self.serial_reader_arduino = serial_reader_arduino
         self.plot_service_control = plot_service_control
+        self.manual_waiting_for_r_peak = False
+        self.auto_waiting_for_r_peak = False
         self.init_ui()
 
     def init_ui(self):
@@ -186,10 +195,16 @@ class CardioversorFireControlWidget(QGroupBox):
         self.test_fire_button.setEnabled(enabled)
 
     def on_auto_clicked(self):
-        self.serial_reader_arduino.send_command("AUTO")
+        # Set auto mode - wait for next R-peak to trigger
+        self.auto_waiting_for_r_peak = True
+        self.auto_button.setText("Auto (Waiting...)")
+        self.auto_button.setStyleSheet("background-color: yellow; color: black; font-weight: bold;")
 
     def on_manual_clicked(self):
-        self.serial_reader_arduino.send_command("MANUAL")
+        # Set manual mode - wait for next R-peak to trigger
+        self.manual_waiting_for_r_peak = True
+        self.manual_button.setText("Manual (Waiting...)")
+        self.manual_button.setStyleSheet("background-color: yellow; color: black; font-weight: bold;")
 
     def on_test_fire_clicked(self):
         reply = QMessageBox.question(
@@ -200,6 +215,29 @@ class CardioversorFireControlWidget(QGroupBox):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.serial_reader_arduino.send_command("TEST_FIRE")
+
+    def trigger_manual_discharge(self):
+        """Trigger discharge when R-peak is detected in manual/auto mode"""
+        triggered = False
+
+        if self.manual_waiting_for_r_peak:
+            self.serial_reader_arduino.send_command("MANUAL_TRIGGER")
+            self.manual_waiting_for_r_peak = False
+            self.manual_button.setText("Manual")
+            self.manual_button.setStyleSheet("")
+            triggered = True
+
+        if self.auto_waiting_for_r_peak:
+            self.serial_reader_arduino.send_command("AUTO_TRIGGER")
+            self.auto_waiting_for_r_peak = False
+            self.auto_button.setText("Auto")
+            self.auto_button.setStyleSheet("")
+            triggered = True
+
+        # Disarm after discharge
+        if triggered:
+            # Small delay before disarming to allow discharge to complete
+            QTimer.singleShot(100, lambda: self.serial_reader_arduino.send_command("DISARM"))
 
 
 class LeadControlWidget(QGroupBox):
@@ -606,7 +644,7 @@ class MainWindow(QMainWindow):
         # Left side: ECG plot (give it more width)
         plot_container = QWidget()
         plot_layout = QVBoxLayout(plot_container)
-        self.plot_widget, self.line_raw, self.status_text = setup_plot(self.ui_service)
+        self.plot_widget, self.line_raw, self.r_peak_scatter, self.status_text = setup_plot(self.ui_service)
         self.plot_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         plot_layout.addWidget(self.plot_widget)
         bottom_layout.addWidget(plot_container, stretch=3)
@@ -631,9 +669,16 @@ class MainWindow(QMainWindow):
         cardio_layout.addWidget(self.fire_control)
         controls_layout.addLayout(cardio_layout)
 
+        # Pass fire control reference to UI service
+        self.ui_service.fire_control = self.fire_control
+
         # Low-pass filter
         self.lowpass_filter_control = LowPassFilterWidget(self.adc_service.signal_processing_service)
         controls_layout.addWidget(self.lowpass_filter_control)
+
+        # R-peak detection control
+        self.r_peak_control = RPeakDetectionWidget(self.adc_service.signal_processing_service)
+        controls_layout.addWidget(self.r_peak_control)
 
         controls_layout.addStretch()
         bottom_layout.addWidget(controls_container, stretch=1)
@@ -972,6 +1017,106 @@ class LowPassFilterWidget(QGroupBox):
         self.displayed_order = 8
         self.cutoff_label.setText("30.0")
         self.order_label.setText("8")
+        self.clear_status()
+
+    def clear_status(self):
+        self.status_label.setText("")
+
+
+class RPeakDetectionWidget(QGroupBox):
+    def __init__(self, signal_processing_service):
+        super().__init__("R-Peak Detection")
+        self.signal_processing_service = signal_processing_service
+        # Store current displayed values (preview mode)
+        self.displayed_enabled = self.signal_processing_service.r_peak_enabled
+        self.displayed_threshold = self.signal_processing_service.r_peak_threshold
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QGridLayout()
+
+        # Enable/disable checkbox
+        layout.addWidget(QLabel("Enable R-Peak Detection:"), 0, 0)
+        self.enable_checkbox = QCheckBox()
+        self.enable_checkbox.setChecked(self.displayed_enabled)
+        self.enable_checkbox.stateChanged.connect(self.on_enable_changed)
+        layout.addWidget(self.enable_checkbox, 0, 1)
+
+        # Threshold controls
+        layout.addWidget(QLabel("Threshold (V):"), 1, 0)
+        self.threshold_label = QLabel(f"{self.displayed_threshold:.1f}")
+        layout.addWidget(self.threshold_label, 1, 1)
+
+        threshold_btn_layout = QHBoxLayout()
+        self.threshold_minus_btn = QPushButton("-")
+        self.threshold_minus_btn.clicked.connect(self.on_threshold_minus_clicked)
+        threshold_btn_layout.addWidget(self.threshold_minus_btn)
+
+        self.threshold_plus_btn = QPushButton("+")
+        self.threshold_plus_btn.clicked.connect(self.on_threshold_plus_clicked)
+        threshold_btn_layout.addWidget(self.threshold_plus_btn)
+
+        layout.addLayout(threshold_btn_layout, 1, 2)
+
+        # Set and Reset buttons
+        button_layout = QHBoxLayout()
+        self.reset_button = QPushButton("Reset to Default")
+        self.reset_button.clicked.connect(self.on_reset_clicked)
+        button_layout.addWidget(self.reset_button)
+
+        self.set_button = QPushButton("Set")
+        self.set_button.clicked.connect(self.on_set_clicked)
+        button_layout.addWidget(self.set_button)
+
+        layout.addLayout(button_layout, 2, 0, 1, 3)
+
+        # Status label
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        layout.addWidget(self.status_label, 3, 0, 1, 3)
+
+        self.setLayout(layout)
+
+    def on_enable_changed(self, state):
+        self.displayed_enabled = (state == Qt.CheckState.Checked)
+        self.clear_status()
+
+    def on_threshold_minus_clicked(self):
+        self.displayed_threshold = max(0.0, self.displayed_threshold - 0.1)
+        self.threshold_label.setText(f"{self.displayed_threshold:.1f}")
+        self.clear_status()
+
+    def on_threshold_plus_clicked(self):
+        self.displayed_threshold = min(5.0, self.displayed_threshold + 0.1)
+        self.threshold_label.setText(f"{self.displayed_threshold:.1f}")
+        self.clear_status()
+
+    def on_set_clicked(self):
+        # Validate parameters
+        if self.displayed_threshold < 0.0 or self.displayed_threshold > 5.0:
+            QMessageBox.warning(self, "Invalid Threshold",
+                              "Threshold must be between 0.0V and 5.0V.")
+            return
+
+        # Apply the R-peak detection parameters
+        success = self.signal_processing_service.update_r_peak_parameters(
+            self.displayed_enabled, self.displayed_threshold)
+
+        if success:
+            self.status_label.setText("Set!")
+            # Update actual values to match displayed
+            self.signal_processing_service.r_peak_enabled = self.displayed_enabled
+            self.signal_processing_service.r_peak_threshold = self.displayed_threshold
+        else:
+            QMessageBox.warning(self, "Invalid Parameters",
+                              "R-peak detection parameters are out of valid range.")
+            self.status_label.setText("")
+
+    def on_reset_clicked(self):
+        self.displayed_enabled = False  # Default disabled
+        self.displayed_threshold = 0.1
+        self.enable_checkbox.setChecked(self.displayed_enabled)
+        self.threshold_label.setText("0.1")
         self.clear_status()
 
     def clear_status(self):
