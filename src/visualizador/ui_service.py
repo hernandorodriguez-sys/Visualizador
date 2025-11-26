@@ -57,6 +57,7 @@ class UIService(QObject):
         self.plot_y_min = -0.5
         self.plot_y_max = 4.0
         self.plot_window_size = 1500
+        self.plot_time_window = 0.75  # 0.75 seconds (1500 samples at 2000 Hz)
         self.plot_time_axis = False
         self.signal_gain = 1.0
 

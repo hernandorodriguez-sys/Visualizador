@@ -250,16 +250,61 @@ class RecordedDataViewer(QDialog):
 
         layout.addWidget(self.plot_widget)
 
+        # Column selection and zoom controls
+        controls_layout = QHBoxLayout()
+
         # Column selection
-        column_layout = QHBoxLayout()
+        column_layout = QVBoxLayout()
         column_layout.addWidget(QLabel("Plot Column:"))
         self.column_combo = QComboBox()
         self.column_combo.addItems(['ECG_Voltage_V', 'Voltaje_Capacitor_V', 'Corriente_A'])
         self.column_combo.currentTextChanged.connect(self.on_column_changed)
         column_layout.addWidget(self.column_combo)
-        layout.addLayout(column_layout)
+        controls_layout.addLayout(column_layout)
+
+        # Zoom controls
+        zoom_layout = QVBoxLayout()
+        zoom_layout.addWidget(QLabel("X-Axis Zoom:"))
+
+        zoom_buttons_layout = QHBoxLayout()
+        self.zoom_in_btn = QPushButton("Zoom In")
+        self.zoom_in_btn.clicked.connect(self.on_zoom_in)
+        zoom_buttons_layout.addWidget(self.zoom_in_btn)
+
+        self.zoom_out_btn = QPushButton("Zoom Out")
+        self.zoom_out_btn.clicked.connect(self.on_zoom_out)
+        zoom_buttons_layout.addWidget(self.zoom_out_btn)
+
+        self.pan_left_btn = QPushButton("◀")
+        self.pan_left_btn.clicked.connect(self.on_pan_left)
+        zoom_buttons_layout.addWidget(self.pan_left_btn)
+
+        self.pan_right_btn = QPushButton("▶")
+        self.pan_right_btn.clicked.connect(self.on_pan_right)
+        zoom_buttons_layout.addWidget(self.pan_right_btn)
+
+        zoom_layout.addLayout(zoom_buttons_layout)
+
+        # Reset zoom and info
+        reset_layout = QHBoxLayout()
+        self.reset_zoom_btn = QPushButton("Reset Zoom")
+        self.reset_zoom_btn.clicked.connect(self.on_reset_zoom)
+        reset_layout.addWidget(self.reset_zoom_btn)
+
+        self.zoom_info_label = QLabel("Zoom: 100%")
+        reset_layout.addWidget(self.zoom_info_label)
+
+        zoom_layout.addLayout(reset_layout)
+        controls_layout.addLayout(zoom_layout)
+
+        layout.addLayout(controls_layout)
 
         self.setLayout(layout)
+
+        # Initialize zoom state
+        self.zoom_factor = 1.0
+        self.pan_offset = 0.0
+        self.full_x_range = None
 
     def load_csv_files(self):
         recordings_dir = "recordings"
@@ -340,10 +385,82 @@ class RecordedDataViewer(QDialog):
             self.ecg_line.setData([], [])
             self.cap_line.setData([], [])
 
-        # Auto scale
+        # Store full range and auto scale initially
         if x_data and y_data:
-            self.plot_widget.setXRange(min(x_data), max(x_data))
+            self.full_x_range = (min(x_data), max(x_data))
+            self.plot_widget.setXRange(self.full_x_range[0], self.full_x_range[1])
             self.plot_widget.setYRange(min(y_data) - 0.1, max(y_data) + 0.1)
+            self.zoom_factor = 1.0
+            self.pan_offset = 0.0
+            self.update_zoom_info()
+
+    def update_zoom_info(self):
+        """Update the zoom information label"""
+        if hasattr(self, 'zoom_info_label'):
+            self.zoom_info_label.setText(f"Zoom: {self.zoom_factor:.1f}x")
+
+    def on_zoom_in(self):
+        """Zoom in on X-axis (show less time, more detail)"""
+        if not self.full_x_range:
+            return
+        self.zoom_factor *= 1.2
+        self.update_plot_range()
+
+    def on_zoom_out(self):
+        """Zoom out on X-axis (show more time, less detail)"""
+        if not self.full_x_range:
+            return
+        self.zoom_factor /= 1.2
+        # Prevent zooming out too much
+        if self.zoom_factor < 0.1:
+            self.zoom_factor = 0.1
+        self.update_plot_range()
+
+    def on_pan_left(self):
+        """Pan view to the left"""
+        if not self.full_x_range:
+            return
+        range_width = (self.full_x_range[1] - self.full_x_range[0]) / self.zoom_factor
+        pan_step = range_width * 0.1  # Pan by 10% of current view
+        self.pan_offset -= pan_step
+        self.update_plot_range()
+
+    def on_pan_right(self):
+        """Pan view to the right"""
+        if not self.full_x_range:
+            return
+        range_width = (self.full_x_range[1] - self.full_x_range[0]) / self.zoom_factor
+        pan_step = range_width * 0.1  # Pan by 10% of current view
+        self.pan_offset += pan_step
+        self.update_plot_range()
+
+    def on_reset_zoom(self):
+        """Reset zoom to show full range"""
+        if not self.full_x_range:
+            return
+        self.zoom_factor = 1.0
+        self.pan_offset = 0.0
+        self.plot_widget.setXRange(self.full_x_range[0], self.full_x_range[1])
+        self.update_zoom_info()
+
+    def update_plot_range(self):
+        """Update the plot X-axis range based on current zoom and pan"""
+        if not self.full_x_range:
+            return
+
+        full_width = self.full_x_range[1] - self.full_x_range[0]
+        zoomed_width = full_width / self.zoom_factor
+        center = (self.full_x_range[0] + self.full_x_range[1]) / 2 + self.pan_offset
+
+        x_min = center - zoomed_width / 2
+        x_max = center + zoomed_width / 2
+
+        # Constrain to data bounds
+        x_min = max(self.full_x_range[0], x_min)
+        x_max = min(self.full_x_range[1], x_max)
+
+        self.plot_widget.setXRange(x_min, x_max)
+        self.update_zoom_info()
 
 
 class DataRecorderControlWidget(QGroupBox):
@@ -502,14 +619,25 @@ class PlotControlWidget(QGroupBox):
         self.y_max_label = QLabel(f"{self.ui_service.plot_y_max:.1f}")
         layout.addWidget(self.y_max_label, 1, 2)
 
-        # Window size control
-        layout.addWidget(QLabel("Window Size:"), 2, 0)
+        # Time window control (velocity/width)
+        layout.addWidget(QLabel("Time Window (s):"), 2, 0)
+        self.time_window_slider = QSlider(Qt.Orientation.Horizontal)
+        self.time_window_slider.setRange(1, 50)  # 0.1 to 5.0 seconds
+        self.time_window_slider.setValue(int(self.ui_service.plot_time_window * 10))
+        self.time_window_slider.valueChanged.connect(self.on_time_window_changed)
+        layout.addWidget(self.time_window_slider, 2, 1)
+
+        self.time_window_label = QLabel(f"{self.ui_service.plot_time_window:.1f}s")
+        layout.addWidget(self.time_window_label, 2, 2)
+
+        # Window size control (samples) - keep for compatibility
+        layout.addWidget(QLabel("Window Size:"), 3, 0)
         self.window_size_spin = QSpinBox()
         self.window_size_spin.setRange(500, 5000)
         self.window_size_spin.setValue(self.ui_service.plot_window_size)
         self.window_size_spin.setSingleStep(100)
         self.window_size_spin.valueChanged.connect(self.on_window_size_changed)
-        layout.addWidget(self.window_size_spin, 2, 1)
+        layout.addWidget(self.window_size_spin, 3, 1)
 
         # Signal gain control
         layout.addWidget(QLabel("Signal Gain:"), 4, 0)
@@ -540,6 +668,15 @@ class PlotControlWidget(QGroupBox):
         y_max = value / 10.0
         self.ui_service.plot_y_max = y_max
         self.y_max_label.setText(f"{y_max:.1f}")
+
+    def on_time_window_changed(self, value):
+        time_window = value / 10.0
+        self.ui_service.plot_time_window = time_window
+        self.time_window_label.setText(f"{time_window:.1f}s")
+        # Update window size in samples based on time window
+        from .config import SAMPLE_RATE
+        self.ui_service.plot_window_size = int(time_window * SAMPLE_RATE)
+        self.window_size_spin.setValue(self.ui_service.plot_window_size)
 
     def on_window_size_changed(self, value):
         self.ui_service.plot_window_size = value

@@ -38,7 +38,7 @@ def main():
     ui_service.start(adc_service)
 
     try:
-        print("🚀 Iniciando servicios...\n")
+        print("Iniciando servicios...\n")
 
         print("Servicios iniciados:")
         print("   -> ADC Service: ESP32 y Arduino")
